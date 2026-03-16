@@ -1,0 +1,46 @@
+{
+  "title": "Ticket Volume Dashboard",
+  "subtitle": "Created, resolved, and open ticket tracking over time",
+  "sources": "Autotask PSA via Power BI",
+  "filters": ["company", "queue", "time"],
+  "kpi_rows": [
+    [
+      {"label": "Tickets Created", "color": "blue", "metric": "sum:t_cr", "format": "num"},
+      {"label": "Tickets Resolved", "color": "green", "metric": "sum:t_res", "format": "num"}
+    ],
+    [
+      {"label": "Open Tickets", "color": "amber", "metric": "sum:t_open", "format": "num"},
+      {"label": "Backlog", "color": "red", "metric": "sum:t_backlog", "format": "num"}
+    ]
+  ],
+  "gauges": [],
+  "charts": [
+    {
+      "title": "Ticket Volume by Month", "badge": "Monthly", "full": true,
+      "series": [
+        {"label": "Created", "field": "t_cr", "color": "#1B365D", "type": "bar", "bg": "rgba(27,54,93,0.7)"},
+        {"label": "Resolved", "field": "t_res", "color": "#0f766e", "type": "bar", "bg": "rgba(15,118,110,0.7)"}
+      ],
+      "y_format": "num"
+    },
+    {
+      "title": "Open vs Backlog Trend", "badge": "Monthly",
+      "series": [
+        {"label": "Open", "field": "t_open", "color": "#d97706", "type": "line"},
+        {"label": "Backlog", "field": "t_backlog", "color": "#dc2626", "type": "line"}
+      ],
+      "y_format": "num"
+    }
+  ],
+  "table": {
+    "title": "Ticket Volume by Company", "mode": "company",
+    "columns": [
+      {"label": "#", "type": "rank"},
+      {"label": "Company", "type": "name"},
+      {"label": "Created", "field": "t_cr", "format": "num"},
+      {"label": "Resolved", "field": "t_res", "format": "num"},
+      {"label": "Open", "field": "t_open", "format": "num"}
+    ],
+    "sort": "t_cr", "order": "desc", "limit": 15
+  }
+}

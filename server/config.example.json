@@ -1,0 +1,20 @@
+{
+  "default_workspace_id": "",
+  "default_workspace_name": "",
+  "default_dataset_id": "",
+  "default_dataset_name": "",
+  "workspaces": {},
+  "datasets": {},
+  "anonymization": {
+    "enabled": true,
+    "sensitive_columns": {
+      "client": [],
+      "resource": [],
+      "contact": []
+    },
+    "free_text_columns": [],
+    "presidio_enabled": true,
+    "session_retention_days": 90,
+    "encrypt_mappings": false
+  }
+}

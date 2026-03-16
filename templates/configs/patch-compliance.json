@@ -1,0 +1,43 @@
+{
+  "title": "Patch Compliance Dashboard",
+  "subtitle": "Patch deployment status, critical vulnerabilities, and compliance rates",
+  "sources": "RMM via Power BI",
+  "filters": ["company", "time"],
+  "kpi_rows": [
+    [
+      {"label": "Patched %", "color": "green", "metric": "ratio:patched:total_endpoints", "format": "pct", "sub_text": "Target: 95%"},
+      {"label": "Critical Outstanding", "color": "red", "metric": "sum:critical", "format": "num"}
+    ],
+    [
+      {"label": "Total Endpoints", "color": "blue", "metric": "sum:total_endpoints", "format": "num"},
+      {"label": "Overdue Patches", "color": "amber", "metric": "sum:overdue", "format": "num"}
+    ]
+  ],
+  "gauges": [
+    {"label": "Compliance", "metric": "ratio:patched:total_endpoints", "color": "#16a34a", "target": 0.95, "target_label": "Target: 95%", "max": 1}
+  ],
+  "charts": [
+    {
+      "title": "Patch Compliance Trend", "badge": "Monthly", "full": true,
+      "series": [
+        {"label": "Patched", "field": "patched", "color": "#16a34a", "type": "bar", "bg": "rgba(22,163,74,0.6)"},
+        {"label": "Unpatched", "field": "unpatched", "color": "#dc2626", "type": "bar", "bg": "rgba(220,38,38,0.4)"},
+        {"label": "Compliance %", "compute": "ratio", "numerator": "patched", "denominator": "total_endpoints", "color": "#0f766e", "type": "line", "yAxisID": "y2", "tooltip_format": "pct"}
+      ],
+      "y_format": "num",
+      "y2": {"format": "pct", "min": 0, "max": 1}
+    }
+  ],
+  "table": {
+    "title": "Compliance by Company", "mode": "company",
+    "columns": [
+      {"label": "#", "type": "rank"},
+      {"label": "Company", "type": "name"},
+      {"label": "Endpoints", "field": "total_endpoints", "format": "num"},
+      {"label": "Patched %", "type": "derived", "calc": "patched/total_endpoints", "format": "pct"},
+      {"label": "Critical", "field": "critical", "format": "num"},
+      {"label": "Overdue", "field": "overdue", "format": "num"}
+    ],
+    "sort": "total_endpoints", "order": "desc", "limit": 15
+  }
+}

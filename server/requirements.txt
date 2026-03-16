@@ -1,0 +1,15 @@
+# MCP Server
+mcp
+
+# Azure Identity for Power BI authentication
+azure-identity
+requests
+
+# Presidio for PII anonymization
+presidio-analyzer
+presidio-anonymizer
+
+# Required for Presidio NLP engine
+spacy>=3.0.0
+
+# Run after install: python -m spacy download en_core_web_sm

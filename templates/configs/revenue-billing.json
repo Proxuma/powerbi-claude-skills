@@ -1,0 +1,40 @@
+{
+  "title": "Revenue & Billing Dashboard",
+  "subtitle": "Monthly recurring revenue, billable hours, and profit margins",
+  "sources": "Autotask PSA via Power BI",
+  "filters": ["company", "time"],
+  "kpi_rows": [
+    [
+      {"label": "Total Revenue", "color": "teal", "metric": "sum:rev", "format": "eur"},
+      {"label": "Billable Hours", "color": "blue", "metric": "sum:hrs", "format": "hrs"}
+    ],
+    [
+      {"label": "Avg Hourly Rate", "color": "amber", "metric": "ratio:rev:hrs", "format": "eur"},
+      {"label": "Margin", "color": "green", "metric": "ratio:profit:rev", "format": "pct"}
+    ]
+  ],
+  "gauges": [],
+  "charts": [
+    {
+      "title": "Revenue vs Hours by Month", "badge": "Monthly", "full": true,
+      "series": [
+        {"label": "Revenue", "field": "rev", "color": "#0f766e", "type": "bar", "bg": "rgba(15,118,110,0.7)"},
+        {"label": "Hours", "field": "hrs", "color": "#1B365D", "type": "line", "yAxisID": "y2"}
+      ],
+      "y_format": "eur",
+      "y2": {"format": "num", "min": 0}
+    }
+  ],
+  "table": {
+    "title": "Revenue by Company", "mode": "company",
+    "columns": [
+      {"label": "#", "type": "rank"},
+      {"label": "Company", "type": "name"},
+      {"label": "Revenue", "field": "rev", "format": "eur"},
+      {"label": "Hours", "field": "hrs", "format": "hrs"},
+      {"label": "Avg Rate", "type": "derived", "calc": "rev/hrs", "format": "eur"},
+      {"label": "Margin", "type": "derived", "calc": "profit/rev", "format": "pct"}
+    ],
+    "sort": "rev", "order": "desc", "limit": 15
+  }
+}

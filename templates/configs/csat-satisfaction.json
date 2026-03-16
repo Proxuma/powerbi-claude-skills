@@ -1,0 +1,41 @@
+{
+  "title": "CSAT & Satisfaction Dashboard",
+  "subtitle": "Customer satisfaction scores, response rates, and NPS tracking",
+  "sources": "Autotask PSA via Power BI",
+  "filters": ["company", "time"],
+  "kpi_rows": [
+    [
+      {"label": "Avg CSAT Score", "color": "teal", "metric": "wavg:csat_sum:csat_n", "format": "rating"},
+      {"label": "Response Rate", "color": "blue", "metric": "ratio:csat_n:t_total", "format": "pct"}
+    ],
+    [
+      {"label": "Surveys Sent", "color": "amber", "metric": "sum:t_total", "format": "num"},
+      {"label": "Responses", "color": "green", "metric": "sum:csat_n", "format": "num"}
+    ]
+  ],
+  "gauges": [
+    {"label": "CSAT", "metric": "wavg:csat_sum:csat_n", "color": "#0f766e", "format": "num", "target_label": "Out of 5.0", "max": 5}
+  ],
+  "charts": [
+    {
+      "title": "CSAT Trend by Month", "badge": "Monthly", "full": true,
+      "series": [
+        {"label": "Avg CSAT", "compute": "ratio", "numerator": "csat_sum", "denominator": "csat_n", "color": "#0f766e", "type": "line", "tooltip_format": "rating"},
+        {"label": "Responses", "field": "csat_n", "color": "#1B365D", "type": "bar", "bg": "rgba(27,54,93,0.3)", "yAxisID": "y2"}
+      ],
+      "y_format": "num", "y_min": 0, "y_max": 5,
+      "y2": {"format": "num", "min": 0}
+    }
+  ],
+  "table": {
+    "title": "CSAT by Company", "mode": "company",
+    "columns": [
+      {"label": "#", "type": "rank"},
+      {"label": "Company", "type": "name"},
+      {"label": "Avg CSAT", "type": "derived", "calc": "csat_sum/csat_n", "format": "rating"},
+      {"label": "Responses", "field": "csat_n", "format": "num"},
+      {"label": "Response Rate", "type": "derived", "calc": "csat_n/t_total", "format": "pct"}
+    ],
+    "sort": "csat_n", "order": "desc", "limit": 15
+  }
+}

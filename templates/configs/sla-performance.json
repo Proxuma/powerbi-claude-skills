@@ -1,0 +1,42 @@
+{
+  "title": "SLA Performance Dashboard",
+  "subtitle": "First Response & Resolution SLA tracking by company and month",
+  "sources": "Autotask PSA via Power BI",
+  "filters": ["company", "queue", "time"],
+  "kpi_rows": [
+    [
+      {"label": "First Response SLA", "color": "teal", "metric": "ratio:fr_met:t_total", "format": "pct", "sub_text": "Target: 85%"},
+      {"label": "Resolution SLA", "color": "green", "metric": "ratio:res_met:t_total", "format": "pct", "sub_text": "Target: 90%"}
+    ],
+    [
+      {"label": "Total Tickets", "color": "blue", "metric": "sum:t_total", "format": "num"},
+      {"label": "Overdue Tickets", "color": "red", "metric": "sum:overdue", "format": "num"}
+    ]
+  ],
+  "gauges": [
+    {"label": "FR SLA", "metric": "ratio:fr_met:t_total", "color": "#0f766e", "target": 0.85, "target_label": "Target: 85%", "max": 1},
+    {"label": "Resolution SLA", "metric": "ratio:res_met:t_total", "color": "#16a34a", "target": 0.90, "target_label": "Target: 90%", "max": 1}
+  ],
+  "charts": [
+    {
+      "title": "SLA Trend by Month", "badge": "Monthly", "full": true,
+      "series": [
+        {"label": "FR SLA %", "compute": "ratio", "numerator": "fr_met", "denominator": "t_total", "color": "#0f766e", "type": "line", "tooltip_format": "pct"},
+        {"label": "Resolution SLA %", "compute": "ratio", "numerator": "res_met", "denominator": "t_total", "color": "#16a34a", "type": "line", "tooltip_format": "pct"}
+      ],
+      "y_format": "pct", "y_min": 0, "y_max": 1
+    }
+  ],
+  "table": {
+    "title": "SLA by Company", "mode": "company",
+    "columns": [
+      {"label": "#", "type": "rank"},
+      {"label": "Company", "type": "name"},
+      {"label": "Tickets", "field": "t_total", "format": "num"},
+      {"label": "FR SLA", "type": "derived", "calc": "fr_met/t_total", "format": "pct"},
+      {"label": "Res SLA", "type": "derived", "calc": "res_met/t_total", "format": "pct"},
+      {"label": "Overdue", "field": "overdue", "format": "num"}
+    ],
+    "sort": "t_total", "order": "desc", "limit": 15
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "title": "Endpoint Health Dashboard",
+  "subtitle": "Device online status, alert counts, and related ticket volumes",
+  "sources": "RMM via Power BI",
+  "filters": ["company", "time"],
+  "kpi_rows": [
+    [
+      {"label": "Online %", "color": "green", "metric": "ratio:online:total_devices", "format": "pct"},
+      {"label": "Active Alerts", "color": "red", "metric": "sum:alerts", "format": "num"}
+    ],
+    [
+      {"label": "Total Devices", "color": "blue", "metric": "sum:total_devices", "format": "num"},
+      {"label": "Related Tickets", "color": "amber", "metric": "sum:tickets", "format": "num"}
+    ]
+  ],
+  "gauges": [
+    {"label": "Online", "metric": "ratio:online:total_devices", "color": "#16a34a", "target": 0.98, "target_label": "Target: 98%", "max": 1}
+  ],
+  "charts": [
+    {
+      "title": "Device Health Trend", "badge": "Monthly", "full": true,
+      "series": [
+        {"label": "Online", "field": "online", "color": "#16a34a", "type": "bar", "bg": "rgba(22,163,74,0.6)"},
+        {"label": "Offline", "field": "offline", "color": "#dc2626", "type": "bar", "bg": "rgba(220,38,38,0.4)"},
+        {"label": "Alerts", "field": "alerts", "color": "#d97706", "type": "line", "yAxisID": "y2"}
+      ],
+      "y_format": "num",
+      "y2": {"format": "num", "min": 0}
+    }
+  ],
+  "table": {
+    "title": "Health by Company", "mode": "company",
+    "columns": [
+      {"label": "#", "type": "rank"},
+      {"label": "Company", "type": "name"},
+      {"label": "Devices", "field": "total_devices", "format": "num"},
+      {"label": "Online %", "type": "derived", "calc": "online/total_devices", "format": "pct"},
+      {"label": "Alerts", "field": "alerts", "format": "num"},
+      {"label": "Tickets", "field": "tickets", "format": "num"}
+    ],
+    "sort": "total_devices", "order": "desc", "limit": 15
+  }
+}

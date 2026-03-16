@@ -1,0 +1,5 @@
+{
+  "chat.agent.enabled": true,
+  "chat.promptFiles": true,
+  "chat.mcp.enabled": true
+}

@@ -1,0 +1,42 @@
+{
+  "title": "Resource Utilization Dashboard",
+  "subtitle": "Billable percentage, total hours, and FTE tracking per resource",
+  "sources": "Autotask PSA via Power BI",
+  "filters": ["resource", "time"],
+  "kpi_rows": [
+    [
+      {"label": "Billable %", "color": "teal", "metric": "ratio:bill_hrs:total_hrs", "format": "pct", "sub_text": "Target: 70%"},
+      {"label": "Total Hours", "color": "blue", "metric": "sum:total_hrs", "format": "hrs"}
+    ],
+    [
+      {"label": "Billable Hours", "color": "green", "metric": "sum:bill_hrs", "format": "hrs"},
+      {"label": "Non-Billable", "color": "amber", "metric": "sum:nonbill_hrs", "format": "hrs"}
+    ]
+  ],
+  "gauges": [
+    {"label": "Utilization", "metric": "ratio:bill_hrs:total_hrs", "color": "#0f766e", "target": 0.70, "target_label": "Target: 70%", "max": 1}
+  ],
+  "charts": [
+    {
+      "title": "Utilization Trend by Month", "badge": "Monthly", "full": true,
+      "series": [
+        {"label": "Billable", "field": "bill_hrs", "color": "#0f766e", "type": "bar", "bg": "rgba(15,118,110,0.7)"},
+        {"label": "Non-Billable", "field": "nonbill_hrs", "color": "#94a3b8", "type": "bar", "bg": "rgba(148,163,184,0.4)"},
+        {"label": "Util %", "compute": "ratio", "numerator": "bill_hrs", "denominator": "total_hrs", "color": "#1B365D", "type": "line", "yAxisID": "y2", "tooltip_format": "pct"}
+      ],
+      "y_format": "hrs",
+      "y2": {"format": "pct", "min": 0, "max": 1}
+    }
+  ],
+  "table": {
+    "title": "Utilization by Resource", "mode": "company",
+    "columns": [
+      {"label": "#", "type": "rank"},
+      {"label": "Resource", "type": "name"},
+      {"label": "Total Hours", "field": "total_hrs", "format": "hrs"},
+      {"label": "Billable", "field": "bill_hrs", "format": "hrs"},
+      {"label": "Util %", "type": "derived", "calc": "bill_hrs/total_hrs", "format": "pct"}
+    ],
+    "sort": "total_hrs", "order": "desc", "limit": 20
+  }
+}

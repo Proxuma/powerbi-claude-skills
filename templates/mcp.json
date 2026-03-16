@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "powerbi": {
+      "command": "python3",
+      "args": ["${workspaceFolder}/server/server.py"],
+      "env": {}
+    }
+  }
+}

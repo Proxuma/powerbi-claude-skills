@@ -1,0 +1,1895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proxuma Dashboard Renderer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #f8fafc;
+    color: #1e293b;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+}
+
+/* === HEADER === */
+.renderer-header {
+    background: linear-gradient(135deg, #0f766e 0%, #115e58 50%, #134e4a 100%);
+    padding: 28px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.renderer-header h1 {
+    color: white;
+    font-size: 1.4rem;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+}
+
+.renderer-header h1 span {
+    color: #5eead4;
+}
+
+.renderer-header-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.75rem;
+    color: rgba(255,255,255,0.6);
+    font-weight: 500;
+}
+
+.renderer-header-meta a {
+    color: #5eead4;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.renderer-header-meta a:hover {
+    text-decoration: underline;
+}
+
+/* === MAIN LAYOUT === */
+.renderer-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    height: calc(100vh - 80px);
+    min-height: 600px;
+}
+
+/* === LEFT PANEL (Editor) === */
+.editor-panel {
+    display: flex;
+    flex-direction: column;
+    background: #f8fafc;
+    border-right: 1px solid #e2e8f0;
+    overflow: hidden;
+}
+
+.editor-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    flex-wrap: wrap;
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #0f766e, #14b8a6);
+    color: white;
+    box-shadow: 0 2px 8px rgba(15, 118, 110, 0.3);
+}
+
+.btn-primary:hover {
+    box-shadow: 0 4px 16px rgba(15, 118, 110, 0.4);
+    transform: translateY(-1px);
+}
+
+.btn-accent {
+    background: linear-gradient(135deg, #00D9A5, #00c49a);
+    color: #134e4a;
+    box-shadow: 0 2px 8px rgba(0, 217, 165, 0.3);
+}
+
+.btn-accent:hover {
+    box-shadow: 0 4px 16px rgba(0, 217, 165, 0.4);
+    transform: translateY(-1px);
+}
+
+.btn-outline {
+    background: white;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+}
+
+.btn-outline:hover {
+    border-color: #94a3b8;
+    background: #f8fafc;
+}
+
+.btn-danger {
+    background: white;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+}
+
+.btn-danger:hover {
+    background: #fef2f2;
+    border-color: #dc2626;
+}
+
+.btn svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+
+.toolbar-sep {
+    width: 1px;
+    height: 24px;
+    background: #e2e8f0;
+    flex-shrink: 0;
+}
+
+/* === UNIFIED PASTE AREA === */
+.paste-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
+.paste-area textarea {
+    flex: 1;
+    width: 100%;
+    border: none;
+    outline: none;
+    resize: none;
+    padding: 16px 20px;
+    font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.78rem;
+    line-height: 1.6;
+    color: #1e293b;
+    background: white;
+    tab-size: 2;
+}
+
+.paste-area textarea:focus {
+    background: #fefffe;
+}
+
+.paste-area textarea::placeholder {
+    color: #94a3b8;
+}
+
+/* Empty state overlay */
+.paste-empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    pointer-events: none;
+    z-index: 1;
+    background: linear-gradient(135deg, #f8fafc 0%, #f0fdfa 100%);
+    transition: opacity 0.2s;
+}
+
+.paste-empty-state.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.paste-empty-state svg {
+    width: 48px;
+    height: 48px;
+    color: #0f766e;
+    opacity: 0.5;
+}
+
+.paste-empty-state h3 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0;
+}
+
+.paste-empty-state p {
+    font-size: 0.82rem;
+    color: #64748b;
+    text-align: center;
+    line-height: 1.6;
+    max-width: 320px;
+    margin: 0;
+}
+
+.paste-empty-state .paste-shortcut {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.72rem;
+    color: #94a3b8;
+    margin-top: 4px;
+}
+
+.paste-empty-state kbd {
+    display: inline-block;
+    padding: 2px 6px;
+    background: white;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #475569;
+    box-shadow: 0 1px 0 #e2e8f0;
+}
+
+.paste-status {
+    padding: 6px 16px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #0f766e;
+    background: #f0fdfa;
+    border-top: 1px solid #e2e8f0;
+    display: none;
+}
+
+.paste-status.visible {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.paste-status.error {
+    color: #dc2626;
+    background: #fef2f2;
+}
+
+/* Hidden split textareas for internal use */
+.editor-sections-hidden {
+    display: none;
+}
+
+/* === RIGHT PANEL (Preview) === */
+.preview-panel {
+    display: flex;
+    flex-direction: column;
+    background: #f8fafc;
+    overflow: hidden;
+}
+
+.preview-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.preview-toolbar h3 {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #475569;
+}
+
+.preview-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #94a3b8;
+}
+
+.preview-status .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #94a3b8;
+}
+
+.preview-status.ready .dot {
+    background: #22c55e;
+    animation: pulse 2s ease infinite;
+}
+
+.preview-status.ready {
+    color: #166534;
+}
+
+.preview-status.error .dot {
+    background: #ef4444;
+}
+
+.preview-status.error {
+    color: #dc2626;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.preview-frame-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #e2e8f0;
+}
+
+.preview-frame-wrap iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: white;
+}
+
+/* === ERROR TOAST === */
+.error-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(120px);
+    background: #991b1b;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 10px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+    z-index: 1000;
+    transition: transform 0.3s ease;
+    max-width: 90vw;
+    text-align: center;
+}
+
+.error-toast.visible {
+    transform: translateX(-50%) translateY(0);
+}
+
+/* === RESPONSIVE === */
+@media (max-width: 960px) {
+    .renderer-body {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+
+    .editor-panel {
+        height: 50vh;
+        min-height: 400px;
+        border-right: none;
+        border-bottom: 2px solid #e2e8f0;
+    }
+
+    .preview-panel {
+        height: 50vh;
+        min-height: 400px;
+    }
+
+    .editor-toolbar {
+        gap: 6px;
+    }
+
+    .btn {
+        padding: 6px 12px;
+        font-size: 0.72rem;
+    }
+}
+
+@media (max-width: 560px) {
+    .renderer-header {
+        padding: 20px 16px;
+    }
+
+    .renderer-header h1 {
+        font-size: 1.1rem;
+    }
+
+    .editor-toolbar {
+        padding: 10px 12px;
+    }
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="renderer-header">
+    <h1><span>Proxuma</span> Dashboard Renderer</h1>
+    <div class="renderer-header-meta">
+        <span>Paste Copilot JSON, see it live</span>
+        <a href="https://proxuma.io/powerbi" target="_blank">proxuma.io/powerbi</a>
+    </div>
+</div>
+
+<!-- MAIN LAYOUT -->
+<div class="renderer-body">
+    <!-- LEFT: Editor -->
+    <div class="editor-panel">
+        <div class="editor-toolbar">
+            <button class="btn btn-primary" id="btn-render" title="Render Dashboard (Ctrl+Enter)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                Render
+            </button>
+            <button class="btn btn-accent" id="btn-paste" title="Paste combined JSON from Copilot">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+                Paste from Copilot
+            </button>
+            <div class="toolbar-sep"></div>
+            <button class="btn btn-outline" id="btn-download" title="Download rendered dashboard as HTML">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                Download HTML
+            </button>
+            <button class="btn btn-danger" id="btn-clear" title="Clear all textareas">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                Clear
+            </button>
+        </div>
+
+        <!-- Unified paste area -->
+        <div class="paste-area">
+            <div class="paste-empty-state" id="paste-empty">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/>
+                    <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+                    <path d="M9 14l2 2 4-4"/>
+                </svg>
+                <h3>Paste your Copilot output here</h3>
+                <p>Copy the JSON from Copilot Studio, VS Code, or Claude and paste it below. The dashboard renders instantly.</p>
+                <span class="paste-shortcut"><kbd>Ctrl</kbd>+<kbd>V</kbd> to paste &nbsp;|&nbsp; <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to render</span>
+            </div>
+            <textarea id="ta-unified" spellcheck="false" placeholder='Paste JSON here... e.g. {"config": {...}, "data": {...}}'></textarea>
+            <div class="paste-status" id="paste-status"></div>
+        </div>
+
+        <!-- Hidden: split textareas for internal render logic -->
+        <div class="editor-sections-hidden">
+            <textarea id="ta-config"></textarea>
+            <textarea id="ta-data"></textarea>
+        </div>
+    </div>
+
+    <!-- RIGHT: Preview -->
+    <div class="preview-panel">
+        <div class="preview-toolbar">
+            <h3>Live Preview</h3>
+            <span class="preview-status" id="preview-status">
+                <span class="dot"></span>
+                <span class="status-text">Idle</span>
+            </span>
+        </div>
+        <div class="preview-frame-wrap">
+            <iframe id="preview-iframe" sandbox="allow-scripts allow-same-origin"></iframe>
+        </div>
+    </div>
+</div>
+
+<!-- ERROR TOAST -->
+<div class="error-toast" id="error-toast"></div>
+
+<script>
+// ================================================================
+//  DASHBOARD TEMPLATE (embedded verbatim from dashboard.html)
+// ================================================================
+const DASHBOARD_TEMPLATE = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proxuma Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"><\\/script>
+
+<style>
+/* === V2 DASHBOARD — RESET & BASE === */
+.prx-dash *,.prx-dash *::before,.prx-dash *::after{box-sizing:border-box;margin:0;padding:0;}
+.prx-dash{font-family:'Open Sans',-apple-system,BlinkMacSystemFont,sans-serif;color:#1e293b;line-height:1.5;max-width:1800px;margin:0 auto;padding:0 32px 40px;-webkit-font-smoothing:antialiased;}
+
+/* === V2 COLOR PALETTE (cohesive teal) === */
+:root{--prx-teal-700:#0f766e;--prx-teal-800:#115e58;--prx-teal-900:#134e4a;--prx-teal-50:#f0fdfa;--prx-teal-100:#ccfbf1;--prx-teal-200:#99f6e4;--prx-teal-400:#2dd4bf;--prx-navy:#1B365D;--prx-cta:#00D9A5;--prx-slate-50:#f8fafc;--prx-slate-100:#f1f5f9;--prx-slate-200:#e2e8f0;--prx-slate-400:#94a3b8;--prx-slate-500:#64748b;--prx-slate-700:#334155;--prx-slate-900:#0f172a;--prx-green:#16a34a;--prx-red:#dc2626;--prx-amber:#d97706;}
+
+/* === HEADER === */
+.prx-dash .dash-header{padding:24px 0 18px;border-bottom:1px solid var(--prx-slate-200);margin-bottom:0;display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:12px;}
+.prx-dash .dash-header h1{font-weight:800;font-size:1.5rem;color:var(--prx-teal-700);line-height:1.2;letter-spacing:-0.3px;}
+.prx-dash .dash-header-sub{font-size:0.82rem;color:var(--prx-slate-500);margin-top:2px;}
+.prx-dash .dash-header-meta{display:flex;align-items:center;gap:12px;flex-shrink:0;}
+.prx-dash .dash-refresh{display:inline-flex;align-items:center;gap:6px;background:var(--prx-teal-50);border:1px solid var(--prx-teal-200);border-radius:20px;padding:5px 14px;font-size:0.72rem;font-weight:600;color:var(--prx-teal-800);}
+.prx-dash .dash-refresh .dot{width:7px;height:7px;background:var(--prx-cta);border-radius:50%;animation:prx-pulse 2s ease infinite;}
+@keyframes prx-pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
+.prx-dash .dash-source{font-size:0.72rem;color:var(--prx-slate-400);font-weight:500;}
+
+/* === V2 FILTER BAR — horizontal, clean dropdowns === */
+.prx-dash .filter-bar{padding:10px 0;border-bottom:1px solid var(--prx-slate-200);margin-bottom:20px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
+.prx-dash .filter-group{position:relative;}
+.prx-dash .filter-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--prx-slate-200);border-radius:8px;background:white;font-size:0.75rem;font-weight:600;color:var(--prx-slate-700);cursor:pointer;transition:all 0.15s;font-family:inherit;}
+.prx-dash .filter-btn:hover{border-color:var(--prx-slate-400);background:var(--prx-slate-50);}
+.prx-dash .filter-btn.active{border-color:var(--prx-teal-700);color:var(--prx-teal-700);background:var(--prx-teal-50);}
+.prx-dash .filter-btn svg{width:13px;height:13px;opacity:0.45;}
+.prx-dash .filter-dropdown{position:absolute;top:calc(100% + 6px);left:0;z-index:100;background:white;border:1px solid var(--prx-slate-200);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,0.12);min-width:220px;max-height:320px;display:none;flex-direction:column;}
+.prx-dash .filter-dropdown.open{display:flex;}
+.prx-dash .filter-search{padding:10px 12px;border-bottom:1px solid var(--prx-slate-100);}
+.prx-dash .filter-search input{width:100%;border:1px solid var(--prx-slate-200);border-radius:6px;padding:6px 10px;font-size:0.75rem;font-family:inherit;outline:none;}
+.prx-dash .filter-search input:focus{border-color:var(--prx-teal-700);}
+.prx-dash .filter-options{overflow-y:auto;max-height:240px;padding:6px;}
+.prx-dash .filter-opt{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;cursor:pointer;font-size:0.75rem;color:var(--prx-slate-700);transition:background 0.1s;}
+.prx-dash .filter-opt:hover{background:var(--prx-teal-50);}
+.prx-dash .filter-opt.selected{background:var(--prx-teal-50);color:var(--prx-teal-700);font-weight:600;}
+.prx-dash .filter-opt .check{width:16px;height:16px;border:2px solid #cbd5e1;border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all 0.15s;}
+.prx-dash .filter-opt.selected .check{background:var(--prx-teal-700);border-color:var(--prx-teal-700);}
+.prx-dash .filter-opt.selected .check::after{content:'';width:5px;height:8px;border:solid white;border-width:0 2px 2px 0;transform:rotate(45deg);margin-top:-2px;}
+.prx-dash .filter-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+.prx-dash .filter-chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--prx-teal-50);border:1px solid var(--prx-teal-200);border-radius:20px;font-size:0.68rem;font-weight:600;color:var(--prx-teal-700);}
+.prx-dash .filter-chip .remove{width:14px;height:14px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:10px;line-height:1;color:var(--prx-teal-700);opacity:0.6;transition:opacity 0.1s;}
+.prx-dash .filter-chip .remove:hover{opacity:1;background:rgba(15,118,110,0.1);}
+.prx-dash .filter-clear{font-size:0.68rem;color:var(--prx-slate-400);cursor:pointer;font-weight:600;padding:4px 8px;border-radius:4px;transition:color 0.1s;}
+.prx-dash .filter-clear:hover{color:var(--prx-red);}
+.prx-dash .filter-context{font-size:0.78rem;color:var(--prx-slate-500);padding:0 0 4px;margin-left:auto;}
+.prx-dash .filter-context strong{color:var(--prx-teal-700);font-weight:700;}
+
+/* === V2 KPI CARDS — 4-column with sparklines === */
+.prx-dash .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px;}
+.prx-dash .kpi-card{background:white;border:1px solid var(--prx-slate-200);border-radius:12px;padding:16px 18px 14px;position:relative;overflow:hidden;transition:box-shadow 0.2s ease,border-color 0.2s ease;}
+.prx-dash .kpi-card:hover{box-shadow:0 4px 20px rgba(0,0,0,0.05);border-color:#cbd5e1;}
+.prx-dash .kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:14px 14px 0 0;}
+.prx-dash .kpi-card.teal::before{background:var(--prx-teal-700);}
+.prx-dash .kpi-card.blue::before{background:var(--prx-navy);}
+.prx-dash .kpi-card.amber::before{background:var(--prx-amber);}
+.prx-dash .kpi-card.green::before{background:var(--prx-green);}
+.prx-dash .kpi-card.red::before{background:var(--prx-red);}
+.prx-dash .kpi-card.purple::before{background:#7c3aed;}
+.prx-dash .kpi-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
+.prx-dash .kpi-info{flex:1;min-width:0;}
+.prx-dash .kpi-label{font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;color:var(--prx-slate-400);margin-bottom:4px;}
+.prx-dash .kpi-value{font-size:1.5rem;font-weight:800;color:var(--prx-slate-900);line-height:1.1;margin-bottom:2px;font-variant-numeric:tabular-nums;}
+.prx-dash .kpi-sub{font-size:0.7rem;color:var(--prx-slate-500);}
+.prx-dash .kpi-sub .up{color:var(--prx-green);font-weight:700;}
+.prx-dash .kpi-sub .down{color:var(--prx-red);font-weight:700;}
+.prx-dash .kpi-sub .neutral{color:var(--prx-slate-400);font-weight:600;}
+.prx-dash .kpi-mini{font-size:0.62rem;color:var(--prx-slate-400);margin-top:3px;}
+.prx-dash .kpi-spark{width:72px;height:32px;flex-shrink:0;margin-top:2px;}
+
+/* === V2 CHART PANELS — clean cards === */
+.prx-dash .dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+.prx-dash .dash-panel{background:white;border:1px solid var(--prx-slate-200);border-radius:12px;padding:18px;position:relative;}
+.prx-dash .dash-panel.full{grid-column:1/-1;}
+.prx-dash .dash-panel.third{grid-column:span 1;}
+.prx-dash .dash-grid.three-col{grid-template-columns:1fr 1fr 1fr;}
+.prx-dash .dash-panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+.prx-dash .dash-panel-title{font-size:0.85rem;font-weight:700;color:var(--prx-slate-900);}
+.prx-dash .dash-panel-badge{display:inline-flex;align-items:center;gap:4px;background:var(--prx-teal-50);border:1px solid var(--prx-teal-200);border-radius:20px;padding:3px 10px;font-size:0.6rem;font-weight:600;color:var(--prx-teal-800);}
+.prx-dash .dash-panel-badge.warn{background:#fffbeb;border-color:#fde68a;color:#92400e;}
+.prx-dash .dash-panel-badge.danger{background:#fef2f2;border-color:#fecaca;color:#991b1b;}
+.prx-dash .chart-wrap{position:relative;height:260px;}
+
+/* === V2 TABLE — dense rows === */
+.prx-dash .dash-table{width:100%;border-collapse:collapse;font-size:0.78rem;}
+.prx-dash .dash-table thead th{text-align:left;padding:8px 12px;font-size:0.63rem;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--prx-slate-400);border-bottom:2px solid var(--prx-slate-200);background:var(--prx-slate-50);}
+.prx-dash .dash-table thead th:last-child,.prx-dash .dash-table thead th:nth-child(n+3){text-align:right;}
+.prx-dash .dash-table tbody td{padding:8px 12px;border-bottom:1px solid var(--prx-slate-100);color:var(--prx-slate-700);}
+.prx-dash .dash-table tbody td:last-child,.prx-dash .dash-table tbody td:nth-child(n+3){text-align:right;font-variant-numeric:tabular-nums;}
+.prx-dash .dash-table tbody tr:hover{background:var(--prx-slate-50);}
+.prx-dash .rank-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;font-size:0.66rem;font-weight:700;background:var(--prx-slate-100);color:var(--prx-slate-500);}
+.prx-dash .rank-num.top3{background:var(--prx-teal-700);color:white;}
+
+/* === V2 GAUGE ROW — compact inline rings === */
+.prx-dash .gauge-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;margin-bottom:14px;}
+.prx-dash .gauge-card{background:white;border:1px solid var(--prx-slate-200);border-radius:12px;padding:14px 14px;text-align:center;}
+.prx-dash .gauge-card .gauge-label{font-size:0.62rem;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;color:var(--prx-slate-400);margin-bottom:8px;}
+.prx-dash .gauge-ring{position:relative;width:72px;height:72px;margin:0 auto 8px;}
+.prx-dash .gauge-ring svg{width:100%;height:100%;transform:rotate(-90deg);}
+.prx-dash .gauge-ring circle{fill:none;stroke-width:6;stroke-linecap:round;}
+.prx-dash .gauge-ring .bg{stroke:var(--prx-slate-100);}
+.prx-dash .gauge-ring .fill{transition:stroke-dashoffset 0.8s ease;}
+.prx-dash .gauge-ring .val{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:0.95rem;font-weight:800;color:var(--prx-slate-900);}
+.prx-dash .gauge-target{font-size:0.62rem;color:var(--prx-slate-400);}
+
+/* === FOOTER === */
+.prx-dash .dash-footer{text-align:center;padding:36px 0 16px;font-size:0.7rem;color:var(--prx-slate-400);}
+.prx-dash .dash-footer a{color:var(--prx-teal-700);font-weight:600;text-decoration:none;}
+.prx-dash .dash-footer a:hover{text-decoration:underline;}
+
+/* === RESPONSIVE === */
+@media(max-width:1200px){.prx-dash .kpi-row{grid-template-columns:repeat(2,1fr);}.prx-dash .dash-grid.three-col{grid-template-columns:1fr 1fr;}}
+@media(max-width:900px){.prx-dash .dash-grid{grid-template-columns:1fr;}.prx-dash .dash-grid.three-col{grid-template-columns:1fr;}.prx-dash .kpi-row{grid-template-columns:1fr 1fr;}.prx-dash .filter-bar{flex-direction:column;align-items:flex-start;}.prx-dash .dash-header{flex-direction:column;}}
+@media(max-width:560px){.prx-dash .kpi-row{grid-template-columns:1fr;}.prx-dash .gauge-row{grid-template-columns:1fr 1fr;}}
+</style>
+</head>
+<body style="background:#f8fafc;margin:0;padding:0;">
+
+<div class="prx-dash">
+    <!-- HEADER -->
+    <div class="dash-header">
+        <div>
+            <h1 id="dash-title"></h1>
+            <div class="dash-header-sub" id="dash-subtitle"></div>
+        </div>
+        <div class="dash-header-meta">
+            <span class="dash-refresh"><span class="dot"></span> Live — <span id="refresh-ts">--</span></span>
+            <span class="dash-source" id="dash-source"></span>
+        </div>
+    </div>
+
+    <!-- FILTER BAR (built dynamically) -->
+    <div class="filter-bar" id="filter-bar">
+        <div class="filter-chips" id="filter-chips"></div>
+        <span class="filter-context" id="filter-context"></span>
+    </div>
+
+    <!-- KPI ROWS (built dynamically) -->
+    <div id="kpi-container"></div>
+
+    <!-- GAUGE ROW (built dynamically) -->
+    <div class="gauge-row" id="gauge-container"></div>
+
+    <!-- CHART GRID (built dynamically) -->
+    <div class="dash-grid" id="chart-container"></div>
+
+    <!-- TABLE (built dynamically) -->
+    <div class="dash-grid" id="table-container"></div>
+
+    <!-- FOOTER -->
+    <div class="dash-footer">
+        <div>Generated by <strong>Proxuma Power BI Copilot</strong> — <a href="https://proxuma.io/powerbi">proxuma.io/powerbi</a></div>
+    </div>
+</div>
+
+<script>
+// ================================================================
+//  DASHBOARD CONFIGURATION
+// ================================================================
+const DASH_CONFIG = __DASH_CONFIG_PLACEHOLDER__;
+
+// ================================================================
+//  DATA PAYLOAD
+// ================================================================
+const DATA = __DATA_JSON_PLACEHOLDER__;
+
+// ================================================================
+//  FORMAT HELPERS
+// ================================================================
+const FMT = {
+    eur: (v, d=0) => '\\u20ac' + (v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(d)+'K' : v.toFixed(d)),
+    eur_full: v => '\\u20ac' + v.toLocaleString('nl-NL', {minimumFractionDigits:0, maximumFractionDigits:0}),
+    pct: (v, d=1) => (v * 100).toFixed(d) + '%',
+    pct0: (v) => (v * 100).toFixed(0) + '%',
+    num: v => v.toLocaleString('nl-NL'),
+    hrs: v => v.toFixed(1) + ' h',
+    rating: v => v.toFixed(1) + '/5',
+    raw: v => String(v),
+};
+
+function fmt(value, format) {
+    if (value === null || value === undefined || isNaN(value)) return '--';
+    const fn = FMT[format] || FMT.num;
+    return fn(value);
+}
+
+const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+// ================================================================
+//  METRIC RESOLVER
+// ================================================================
+function resolveMetric(metricDef, totals, staticKpi) {
+    if (!metricDef) return null;
+    const parts = metricDef.split(':');
+    const op = parts[0];
+
+    switch (op) {
+        case 'sum':
+            return totals[parts[1]] || 0;
+        case 'ratio':
+            const denom = totals[parts[2]] || 0;
+            return denom > 0 ? (totals[parts[1]] || 0) / denom : 0;
+        case 'wavg':
+            const wt = totals[parts[2]] || 0;
+            return wt > 0 ? (totals[parts[1]] || 0) / wt : 0;
+        case 'static':
+            return staticKpi ? (staticKpi[parts[1]] || 0) : 0;
+        case 'count':
+            return totals._count || 0;
+        default:
+            return 0;
+    }
+}
+
+// ================================================================
+//  AGGREGATION ENGINE
+// ================================================================
+function sumTotals(facts) {
+    const t = { _count: facts.length };
+    facts.forEach(f => {
+        Object.keys(f).forEach(k => {
+            if (k === 'c' || k === 'y' || k === 'm') return;
+            t[k] = (t[k] || 0) + (f[k] || 0);
+        });
+    });
+    return t;
+}
+
+function filterFacts(facts, filters) {
+    let out = facts;
+    if (filters.companies.length) {
+        const set = new Set(filters.companies);
+        out = out.filter(f => set.has(f.c));
+    }
+    if (filters.months.length) {
+        out = out.filter(f => filters.months.some(m => m.y === f.y && m.m === f.m));
+    }
+    return out;
+}
+
+function filterResourceFacts(facts, filters) {
+    let out = facts;
+    if (filters.resources.length) {
+        const set = new Set(filters.resources);
+        out = out.filter(f => set.has(f.r));
+    }
+    if (filters.months.length) {
+        out = out.filter(f => filters.months.some(m => m.y === f.y && m.m === f.m));
+    }
+    return out;
+}
+
+function filterQueueFacts(facts, filters) {
+    let out = facts;
+    if (filters.queues.length) {
+        const set = new Set(filters.queues);
+        out = out.filter(f => set.has(f.q));
+    }
+    if (filters.months.length) {
+        out = out.filter(f => filters.months.some(m => m.y === f.y && m.m === f.m));
+    }
+    return out;
+}
+
+function aggregateMonthly(facts) {
+    const map = {};
+    facts.forEach(f => {
+        const key = f.y * 100 + f.m;
+        if (!map[key]) {
+            map[key] = { y: f.y, m: f.m };
+        }
+        Object.keys(f).forEach(k => {
+            if (k === 'c' || k === 'y' || k === 'm') return;
+            map[key][k] = (map[key][k] || 0) + (f[k] || 0);
+        });
+    });
+    return Object.values(map).sort((a, b) => (a.y * 100 + a.m) - (b.y * 100 + b.m));
+}
+
+function aggregateByCompany(facts) {
+    const map = {};
+    facts.forEach(f => {
+        if (!map[f.c]) map[f.c] = { c: f.c };
+        Object.keys(f).forEach(k => {
+            if (k === 'c' || k === 'y' || k === 'm') return;
+            map[f.c][k] = (map[f.c][k] || 0) + (f[k] || 0);
+        });
+    });
+    return Object.values(map);
+}
+
+// ================================================================
+//  DASHSTATE
+// ================================================================
+const DashState = {
+    filters: { companies: [], resources: [], queues: [], months: [] },
+    _subs: [],
+    subscribe(fn) { this._subs.push(fn); },
+    notify() { this._subs.forEach(fn => fn()); },
+    hasFilters() {
+        return this.filters.companies.length > 0 ||
+               this.filters.resources.length > 0 ||
+               this.filters.queues.length > 0 ||
+               this.filters.months.length > 0;
+    },
+    toggleFilter(dim, val) {
+        const arr = this.filters[dim];
+        if (dim === 'months') {
+            const idx = arr.findIndex(v => v.y === val.y && v.m === val.m);
+            if (idx >= 0) arr.splice(idx, 1); else arr.push(val);
+        } else {
+            const idx = arr.indexOf(val);
+            if (idx >= 0) arr.splice(idx, 1); else arr.push(val);
+        }
+        this.notify();
+    },
+    clearAll() {
+        this.filters.companies = [];
+        this.filters.resources = [];
+        this.filters.queues = [];
+        this.filters.months = [];
+        this.notify();
+    }
+};
+
+// ================================================================
+//  FILTER ICONS
+// ================================================================
+const FILTER_ICONS = {
+    company: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M3 7v14M21 7v14M6 11h2M6 15h2M10 11h2M10 15h2M14 11h2M14 15h2M18 11h2M18 15h2M5 7l7-4 7 4"/></svg>',
+    queue: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>',
+    resource: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>',
+    time: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+};
+
+// ================================================================
+//  BUILD LAYOUT FROM CONFIG
+// ================================================================
+function buildLayout() {
+    const C = DASH_CONFIG;
+
+    document.getElementById('dash-title').textContent = C.title;
+    document.getElementById('dash-subtitle').textContent = C.subtitle;
+    document.getElementById('dash-source').textContent = 'Source: ' + C.sources;
+
+    if (DATA.refreshed) {
+        const ts = new Date(DATA.refreshed);
+        document.getElementById('refresh-ts').textContent =
+            ts.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) + ' ' +
+            ts.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
+    } else if (DATA.facts && DATA.facts.length) {
+        // Derive latest date from facts data
+        let maxKey = 0;
+        DATA.facts.forEach(f => {
+            const key = (f.y || 0) * 100 + (f.m || 0);
+            if (key > maxKey) maxKey = key;
+        });
+        if (maxKey > 0) {
+            const latestY = Math.floor(maxKey / 100);
+            const latestM = maxKey % 100;
+            document.getElementById('refresh-ts').textContent =
+                MONTH_NAMES[latestM - 1] + ' ' + latestY;
+        }
+    }
+
+    buildFilterBar(C.filters || ['company', 'queue', 'resource', 'time']);
+
+    const kpiContainer = document.getElementById('kpi-container');
+    kpiContainer.innerHTML = '';
+    (C.kpi_rows || []).forEach((row, ri) => {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'kpi-row';
+        rowEl.id = 'kpi-row-' + ri;
+        row.forEach((kpi, ki) => {
+            const card = document.createElement('div');
+            card.className = 'kpi-card ' + (kpi.color || 'teal');
+            card.id = 'kpi-' + ri + '-' + ki;
+            card.innerHTML =
+                '<div class="kpi-top">' +
+                    '<div class="kpi-info">' +
+                        '<div class="kpi-label">' + kpi.label + '</div>' +
+                        '<div class="kpi-value" data-kpi-value>--</div>' +
+                        '<div class="kpi-sub" data-kpi-sub></div>' +
+                        (kpi.mini ? '<div class="kpi-mini" data-kpi-mini></div>' : '') +
+                    '</div>' +
+                    '<svg class="kpi-spark" data-kpi-spark viewBox="0 0 80 36" preserveAspectRatio="none"></svg>' +
+                '</div>';
+            rowEl.appendChild(card);
+        });
+        kpiContainer.appendChild(rowEl);
+    });
+
+    const gaugeContainer = document.getElementById('gauge-container');
+    gaugeContainer.innerHTML = '';
+    (C.gauges || []).forEach((g, gi) => {
+        const card = document.createElement('div');
+        card.className = 'gauge-card';
+        card.id = 'gauge-' + gi;
+        card.innerHTML =
+            '<div class="gauge-label">' + g.label + '</div>' +
+            '<div class="gauge-ring" data-color="' + (g.color || '#0f766e') + '">' +
+                '<svg viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="42"/><circle class="fill" cx="50" cy="50" r="42"/></svg>' +
+                '<span class="val">--</span>' +
+            '</div>' +
+            '<div class="gauge-target">' + (g.target_label || '') + '</div>';
+        gaugeContainer.appendChild(card);
+    });
+
+    const chartContainer = document.getElementById('chart-container');
+    chartContainer.innerHTML = '';
+    (C.charts || []).forEach((ch, ci) => {
+        const panel = document.createElement('div');
+        panel.className = 'dash-panel' + (ch.full ? ' full' : '');
+        panel.innerHTML =
+            '<div class="dash-panel-head">' +
+                '<span class="dash-panel-title">' + ch.title + '</span>' +
+                '<span class="dash-panel-badge">' + (ch.badge || 'Monthly') + '</span>' +
+            '</div>' +
+            '<div class="chart-wrap"><canvas id="chart-' + ci + '"></canvas></div>';
+        chartContainer.appendChild(panel);
+    });
+
+    if (C.table) {
+        const tableContainer = document.getElementById('table-container');
+        tableContainer.innerHTML = '';
+        const panel = document.createElement('div');
+        panel.className = 'dash-panel full';
+        const thCells = C.table.columns.map(c => '<th>' + c.label + '</th>').join('');
+        panel.innerHTML =
+            '<div class="dash-panel-head">' +
+                '<span class="dash-panel-title">' + (C.table.title || 'Data Table') + '</span>' +
+                '<span class="dash-panel-badge" id="table-badge">All data</span>' +
+            '</div>' +
+            '<table class="dash-table"><thead><tr>' + thCells + '</tr></thead><tbody id="table-body"></tbody></table>';
+        tableContainer.appendChild(panel);
+    }
+}
+
+function buildFilterBar(filterTypes) {
+    const bar = document.getElementById('filter-bar');
+    const chips = document.getElementById('filter-chips');
+    const ctx = document.getElementById('filter-context');
+
+    filterTypes.forEach(dim => {
+        const group = document.createElement('div');
+        group.className = 'filter-group';
+        group.id = 'fg-' + dim;
+
+        const label = dim.charAt(0).toUpperCase() + dim.slice(1);
+        const icon = FILTER_ICONS[dim] || '';
+
+        if (dim === 'time') {
+            group.innerHTML =
+                '<button class="filter-btn" data-dim="time">' + icon + ' Time Range</button>' +
+                '<div class="filter-dropdown" data-dim="time"><div class="filter-options"></div></div>';
+        } else {
+            group.innerHTML =
+                '<button class="filter-btn" data-dim="' + dim + '">' + icon + ' ' + label + '</button>' +
+                '<div class="filter-dropdown" data-dim="' + dim + '">' +
+                    '<div class="filter-search"><input type="text" placeholder="Search ' + dim + 's..."></div>' +
+                    '<div class="filter-options"></div>' +
+                '</div>';
+        }
+        bar.insertBefore(group, chips);
+    });
+
+    bar.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const dim = this.dataset.dim;
+            const dropdown = bar.querySelector('.filter-dropdown[data-dim="' + dim + '"]');
+            const wasOpen = dropdown.classList.contains('open');
+            bar.querySelectorAll('.filter-dropdown').forEach(d => d.classList.remove('open'));
+            if (!wasOpen) dropdown.classList.add('open');
+        });
+    });
+
+    document.addEventListener('click', () => {
+        bar.querySelectorAll('.filter-dropdown').forEach(d => d.classList.remove('open'));
+    });
+
+    bar.querySelectorAll('.filter-search input').forEach(input => {
+        input.addEventListener('click', e => e.stopPropagation());
+        input.addEventListener('input', function() {
+            const term = this.value.toLowerCase();
+            const opts = this.closest('.filter-dropdown').querySelectorAll('.filter-opt');
+            opts.forEach(o => { o.style.display = o.textContent.toLowerCase().includes(term) ? '' : 'none'; });
+        });
+    });
+}
+
+function populateFilterDropdowns() {
+    const dims = {
+        company: DATA.dim.companies || [],
+        resource: DATA.dim.resources || [],
+        queue: DATA.dim.queues || [],
+    };
+
+    Object.entries(dims).forEach(([dim, items]) => {
+        const group = document.getElementById('fg-' + dim);
+        // Hide filter button if no data for this dimension
+        if (group && items.length === 0) {
+            group.style.display = 'none';
+            return;
+        }
+        const container = document.querySelector('.filter-dropdown[data-dim="' + dim + '"] .filter-options');
+        if (!container) return;
+        container.innerHTML = '';
+        items.forEach((name, idx) => {
+            const opt = document.createElement('div');
+            opt.className = 'filter-opt';
+            opt.innerHTML = '<span class="check"></span><span>' + name + '</span>';
+            opt.addEventListener('click', function(e) {
+                e.stopPropagation();
+                DashState.toggleFilter(dim === 'company' ? 'companies' : dim + 's', idx);
+            });
+            container.appendChild(opt);
+        });
+    });
+
+    const timeGroup = document.getElementById('fg-time');
+    const timeContainer = document.querySelector('.filter-dropdown[data-dim="time"] .filter-options');
+    if (timeContainer) {
+        const months = aggregateMonthly(DATA.facts);
+        if (months.length === 0 && timeGroup) {
+            timeGroup.style.display = 'none';
+            return;
+        }
+        const recent = months.slice(-24);
+        timeContainer.innerHTML = '';
+        recent.forEach(m => {
+            const opt = document.createElement('div');
+            opt.className = 'filter-opt';
+            opt.dataset.y = m.y;
+            opt.dataset.m = m.m;
+            opt.innerHTML = '<span class="check"></span><span>' + MONTH_NAMES[m.m - 1] + ' ' + m.y + '</span>';
+            opt.addEventListener('click', function(e) {
+                e.stopPropagation();
+                DashState.toggleFilter('months', { y: m.y, m: m.m });
+            });
+            timeContainer.appendChild(opt);
+        });
+    }
+}
+
+// ================================================================
+//  UPDATE KPIs
+// ================================================================
+function updateKPIs(totals, staticKpi, monthly) {
+    (DASH_CONFIG.kpi_rows || []).forEach((row, ri) => {
+        row.forEach((kpi, ki) => {
+            const card = document.getElementById('kpi-' + ri + '-' + ki);
+            if (!card) return;
+            const valEl = card.querySelector('[data-kpi-value]');
+            const subEl = card.querySelector('[data-kpi-sub]');
+            const miniEl = card.querySelector('[data-kpi-mini]');
+            const sparkEl = card.querySelector('[data-kpi-spark]');
+
+            const value = resolveMetric(kpi.metric, totals, staticKpi);
+            valEl.textContent = fmt(value, kpi.format);
+
+            // Trend indicator: compare last 2 months
+            if (!kpi.sub_metric && !kpi.sub_text && monthly.length >= 2) {
+                const lastMonth = monthly[monthly.length - 1];
+                const prevMonth = monthly[monthly.length - 2];
+                const curVal = resolveMetric(kpi.metric, lastMonth, staticKpi);
+                const prevVal = resolveMetric(kpi.metric, prevMonth, staticKpi);
+                if (prevVal !== 0 && curVal !== null && prevVal !== null) {
+                    const change = ((curVal - prevVal) / Math.abs(prevVal)) * 100;
+                    const arrow = change >= 0 ? '\\u25B2' : '\\u25BC';
+                    const cls = change >= 0 ? 'up' : 'down';
+                    subEl.innerHTML = '<span class="' + cls + '">' + arrow + ' ' + Math.abs(change).toFixed(1) + '% vs last month</span>';
+                } else {
+                    subEl.innerHTML = '';
+                }
+            } else if (kpi.sub_metric) {
+                const subVal = resolveMetric(kpi.sub_metric, totals, staticKpi);
+                const subFormatted = fmt(subVal, kpi.sub_format || kpi.format);
+                subEl.innerHTML = (kpi.sub_prefix || '') + '<span class="up">' + subFormatted + '</span>' + (kpi.sub_suffix || '');
+            } else if (kpi.sub_text) {
+                subEl.innerHTML = kpi.sub_text;
+            } else {
+                subEl.innerHTML = '';
+            }
+
+            if (miniEl && kpi.mini_metric) {
+                const miniVal = resolveMetric(kpi.mini_metric, totals, staticKpi);
+                miniEl.textContent = (kpi.mini_prefix || '') + fmt(miniVal, kpi.mini_format || 'num');
+            }
+
+            // Sparkline: render last 12 months as SVG path
+            if (sparkEl && monthly.length >= 2) {
+                const sparkData = monthly.slice(-12).map(m => resolveMetric(kpi.metric, m, staticKpi));
+                const validData = sparkData.filter(v => v !== null && !isNaN(v));
+                if (validData.length >= 2) {
+                    const min = Math.min(...validData);
+                    const max = Math.max(...validData);
+                    const range = max - min || 1;
+                    const w = 80;
+                    const h = 36;
+                    const pad = 2;
+                    const step = (w - pad * 2) / (validData.length - 1);
+
+                    const points = validData.map((v, i) => {
+                        const x = pad + i * step;
+                        const y = h - pad - ((v - min) / range) * (h - pad * 2);
+                        return x.toFixed(1) + ',' + y.toFixed(1);
+                    });
+
+                    const lineColor = kpi.color === 'red' ? 'var(--prx-red)' :
+                                      kpi.color === 'amber' ? 'var(--prx-amber)' :
+                                      kpi.color === 'green' ? 'var(--prx-green)' :
+                                      kpi.color === 'blue' ? 'var(--prx-navy)' :
+                                      'var(--prx-teal-700)';
+
+                    const areaPoints = points.join(' ') + ' ' + (pad + (validData.length - 1) * step).toFixed(1) + ',' + (h - pad) + ' ' + pad + ',' + (h - pad);
+
+                    sparkEl.innerHTML =
+                        '<polygon points="' + areaPoints + '" fill="' + lineColor + '" fill-opacity="0.08" stroke="none"/>' +
+                        '<polyline points="' + points.join(' ') + '" fill="none" stroke="' + lineColor + '" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>';
+                } else {
+                    sparkEl.innerHTML = '';
+                }
+            }
+        });
+    });
+}
+
+// ================================================================
+//  UPDATE GAUGES
+// ================================================================
+function updateGauges(totals, staticKpi) {
+    const circ = 2 * Math.PI * 42;
+    (DASH_CONFIG.gauges || []).forEach((g, gi) => {
+        const card = document.getElementById('gauge-' + gi);
+        if (!card) return;
+        const value = resolveMetric(g.metric, totals, staticKpi);
+        const pct = Math.min(Math.max(value, 0), g.max || 1);
+        const normalised = pct / (g.max || 1);
+
+        const fillCircle = card.querySelector('.fill');
+        fillCircle.style.stroke = g.color || '#0f766e';
+        fillCircle.style.strokeDasharray = circ;
+        fillCircle.style.strokeDashoffset = circ * (1 - normalised);
+
+        const valSpan = card.querySelector('.val');
+        if (g.format === 'hrs' || g.format === 'num' || g.format === 'rating') {
+            valSpan.textContent = fmt(value, g.format);
+        } else {
+            valSpan.textContent = (value * 100).toFixed(0) + '%';
+        }
+    });
+}
+
+// ================================================================
+//  BUILD CHARTS
+// ================================================================
+const ChartInstances = {};
+
+function buildCharts(monthly) {
+    const labels = monthly.map(m => {
+        let label = MONTH_NAMES[m.m - 1];
+        const now = new Date();
+        if (m.y !== now.getFullYear() || m.y === now.getFullYear()) label += " '" + String(m.y).slice(-2);
+        return label;
+    });
+    const monthKeys = monthly.map(m => ({ y: m.y, m: m.m }));
+
+    (DASH_CONFIG.charts || []).forEach((ch, ci) => {
+        const canvasId = 'chart-' + ci;
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+
+        if (ChartInstances[canvasId]) {
+            ChartInstances[canvasId].destroy();
+        }
+
+        const datasets = (ch.series || []).map(s => {
+            const data = monthly.map(m => {
+                if (s.compute === 'ratio' && s.numerator && s.denominator) {
+                    const d = m[s.denominator] || 0;
+                    return d > 0 ? (m[s.numerator] || 0) / d : 0;
+                }
+                return m[s.field] || 0;
+            });
+
+            const ds = {
+                label: s.label,
+                data: data,
+                borderColor: s.color,
+                backgroundColor: s.type === 'line' ? 'transparent' : (s.bg || s.color + '80'),
+                borderWidth: s.type === 'line' ? 2.5 : 0,
+                pointRadius: s.type === 'line' ? 3 : 0,
+                pointHoverRadius: s.type === 'line' ? 5 : 0,
+                type: s.type || 'bar',
+                tension: 0.35,
+                borderRadius: s.type === 'bar' || !s.type ? 4 : 0,
+                order: s.type === 'line' ? 0 : 1,
+            };
+
+            if (s.fill) ds.fill = s.fill;
+            if (s.yAxisID) ds.yAxisID = s.yAxisID;
+
+            return ds;
+        });
+
+        const yCallback = ch.y_format === 'eur'
+            ? (v) => FMT.eur(v)
+            : ch.y_format === 'pct'
+            ? (v) => (v * 100).toFixed(0) + '%'
+            : ch.y_format === 'hrs'
+            ? (v) => v.toFixed(0) + 'h'
+            : (v) => FMT.num(v);
+
+        const scales = {
+            x: { grid: { display: false } },
+            y: {
+                beginAtZero: ch.y_min === undefined || ch.y_min === 0,
+                min: ch.y_min,
+                max: ch.y_max,
+                ticks: { callback: yCallback },
+                grid: { color: '#f1f5f9' },
+            },
+        };
+
+        if (ch.y2) {
+            scales.y2 = {
+                position: 'right',
+                beginAtZero: true,
+                min: ch.y2.min,
+                max: ch.y2.max,
+                ticks: {
+                    callback: ch.y2.format === 'pct' ? (v) => (v * 100).toFixed(0) + '%' : yCallback,
+                },
+                grid: { display: false },
+            };
+        }
+
+        ChartInstances[canvasId] = new Chart(canvas, {
+            type: 'bar',
+            data: { labels: labels, datasets: datasets, _monthKeys: monthKeys },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { usePointStyle: true, pointStyleWidth: 8 } },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                const s = ch.series[ctx.datasetIndex];
+                                const f = s ? (s.tooltip_format || ch.y_format || 'num') : 'num';
+                                return ctx.dataset.label + ': ' + fmt(ctx.parsed.y, f);
+                            }
+                        }
+                    }
+                },
+                scales: scales,
+                onClick: function(evt) {
+                    const points = this.getElementsAtEventForMode(evt, 'index', { intersect: false }, false);
+                    if (points.length && monthKeys[points[0].index]) {
+                        DashState.toggleFilter('months', monthKeys[points[0].index]);
+                    }
+                },
+            }
+        });
+    });
+}
+
+// ================================================================
+//  UPDATE TABLE
+// ================================================================
+function updateTable(facts) {
+    const tbl = DASH_CONFIG.table;
+    if (!tbl) return;
+    const tbody = document.getElementById('table-body');
+    if (!tbody) return;
+
+    const badge = document.getElementById('table-badge');
+
+    // Determine table mode: per-row (monthly/individual facts) or aggregated by company
+    const mode = tbl.mode || 'company'; // 'company', 'monthly', 'raw'
+    let rows;
+
+    if (mode === 'monthly') {
+        // Show individual monthly rows — no aggregation (preserves percentages)
+        const sorted = [...facts].sort((a, b) => {
+            const sf = tbl.sort || 'y';
+            if (sf === 'y' || sf === 'date') return (b.y * 100 + b.m) - (a.y * 100 + a.m);
+            return (tbl.order === 'asc' ? 1 : -1) * ((b[sf] || 0) - (a[sf] || 0));
+        });
+        rows = sorted.slice(0, tbl.limit || 50);
+        if (badge) badge.textContent = rows.length + ' rows';
+    } else if (mode === 'raw') {
+        // Show raw fact rows as-is
+        rows = facts.slice(0, tbl.limit || 50);
+        if (badge) badge.textContent = rows.length + ' rows';
+    } else {
+        // Default: aggregate by company, but use weighted avg for pct/ratio fields
+        const byCompany = aggregateByCompanyWeighted(facts, tbl.columns);
+        const sortField = tbl.sort || 'rev';
+        byCompany.sort((a, b) => {
+            const va = a[sortField] || 0, vb = b[sortField] || 0;
+            return tbl.order === 'asc' ? va - vb : vb - va;
+        });
+        rows = byCompany.slice(0, tbl.limit || 15);
+        if (badge) badge.textContent = rows.length + ' companies';
+    }
+
+    tbody.innerHTML = '';
+    rows.forEach((row, i) => {
+        const tr = document.createElement('tr');
+        tbl.columns.forEach(col => {
+            const td = document.createElement('td');
+            if (col.type === 'rank') {
+                td.innerHTML = '<span class="rank-num' + (i < 3 ? ' top3' : '') + '">' + (i + 1) + '</span>';
+            } else if (col.type === 'name') {
+                const dims = DATA.dim.companies || [];
+                td.textContent = dims[row.c] || 'Unknown';
+            } else if (col.type === 'month') {
+                td.textContent = MONTH_NAMES[(row.m || 1) - 1] + ' ' + (row.y || '');
+            } else if (col.type === 'derived' && col.calc) {
+                const parts = col.calc.split('/');
+                const numerator = row[parts[0]] || 0;
+                const denominator = row[parts[1]] || 0;
+                td.textContent = denominator > 0 ? fmt(numerator / denominator, col.format || 'num') : '--';
+            } else {
+                td.textContent = fmt(row[col.field] != null ? row[col.field] : 0, col.format || 'num');
+            }
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+}
+
+// Weighted aggregation: sums additive fields, weighted-averages pct fields
+function aggregateByCompanyWeighted(facts, columns) {
+    const pctFields = new Set();
+    (columns || []).forEach(col => {
+        if (col.format === 'pct' || col.format === 'pct0') pctFields.add(col.field);
+    });
+
+    const map = {};
+    facts.forEach(f => {
+        if (!map[f.c]) map[f.c] = { c: f.c, _n: 0 };
+        map[f.c]._n++;
+        Object.keys(f).forEach(k => {
+            if (k === 'c' || k === 'y' || k === 'm') return;
+            map[f.c][k] = (map[f.c][k] || 0) + (f[k] || 0);
+        });
+    });
+
+    // Convert summed pct fields to averages
+    return Object.values(map).map(row => {
+        pctFields.forEach(field => {
+            if (row[field] != null && row._n > 0) {
+                row[field] = row[field] / row._n;
+            }
+        });
+        return row;
+    });
+}
+
+// ================================================================
+//  UPDATE FILTER UI
+// ================================================================
+function updateFilterUI() {
+    const bar = document.getElementById('filter-bar');
+    const chipsEl = document.getElementById('filter-chips');
+    const ctxEl = document.getElementById('filter-context');
+    const f = DashState.filters;
+
+    bar.querySelectorAll('.filter-btn').forEach(btn => {
+        const dim = btn.dataset.dim;
+        const dimKey = dim === 'company' ? 'companies' : dim === 'time' ? 'months' : dim + 's';
+        btn.classList.toggle('active', f[dimKey] && f[dimKey].length > 0);
+    });
+
+    ['company', 'resource', 'queue'].forEach(dim => {
+        const dimKey = dim === 'company' ? 'companies' : dim + 's';
+        const dropdown = bar.querySelector('.filter-dropdown[data-dim="' + dim + '"]');
+        if (!dropdown) return;
+        const set = new Set(f[dimKey]);
+        dropdown.querySelectorAll('.filter-opt').forEach((opt, idx) => {
+            opt.classList.toggle('selected', set.has(idx));
+        });
+    });
+
+    const timeDD = bar.querySelector('.filter-dropdown[data-dim="time"]');
+    if (timeDD) {
+        timeDD.querySelectorAll('.filter-opt').forEach(opt => {
+            const y = parseInt(opt.dataset.y);
+            const m = parseInt(opt.dataset.m);
+            const sel = f.months.some(v => v.y === y && v.m === m);
+            opt.classList.toggle('selected', sel);
+        });
+    }
+
+    chipsEl.innerHTML = '';
+    const dimNames = { companies: 'company', resources: 'resource', queues: 'queue' };
+    const dimArrays = { companies: DATA.dim.companies, resources: DATA.dim.resources, queues: DATA.dim.queues };
+
+    Object.entries(dimNames).forEach(([key, label]) => {
+        f[key].forEach(idx => {
+            const name = dimArrays[key] ? (dimArrays[key][idx] || 'Unknown') : 'Unknown';
+            const chip = document.createElement('span');
+            chip.className = 'filter-chip';
+            chip.innerHTML = name + ' <span class="remove" title="Remove">&times;</span>';
+            chip.querySelector('.remove').addEventListener('click', () => DashState.toggleFilter(key, idx));
+            chipsEl.appendChild(chip);
+        });
+    });
+
+    f.months.forEach(m => {
+        const chip = document.createElement('span');
+        chip.className = 'filter-chip';
+        chip.innerHTML = MONTH_NAMES[m.m - 1] + ' ' + m.y + ' <span class="remove" title="Remove">&times;</span>';
+        chip.querySelector('.remove').addEventListener('click', () => DashState.toggleFilter('months', m));
+        chipsEl.appendChild(chip);
+    });
+
+    if (DashState.hasFilters()) {
+        const clearBtn = document.createElement('span');
+        clearBtn.className = 'filter-clear';
+        clearBtn.textContent = 'Clear all';
+        clearBtn.addEventListener('click', () => DashState.clearAll());
+        chipsEl.appendChild(clearBtn);
+    }
+
+    if (DashState.hasFilters()) {
+        const parts = [];
+        if (f.companies.length) parts.push(f.companies.length + ' ' + (f.companies.length === 1 ? 'company' : 'companies'));
+        if (f.resources.length) parts.push(f.resources.length + ' ' + (f.resources.length === 1 ? 'resource' : 'resources'));
+        if (f.queues.length) parts.push(f.queues.length + ' ' + (f.queues.length === 1 ? 'queue' : 'queues'));
+        if (f.months.length) parts.push(f.months.length + ' ' + (f.months.length === 1 ? 'month' : 'months'));
+        ctxEl.innerHTML = 'Showing data for <strong>' + parts.join(', ') + '</strong>';
+    } else {
+        ctxEl.innerHTML = '';
+    }
+}
+
+// ================================================================
+//  MASTER RENDER
+// ================================================================
+function render() {
+    const ff = filterFacts(DATA.facts || [], DashState.filters);
+    const monthly = aggregateMonthly(ff).slice(-24);
+    const totals = sumTotals(ff);
+
+    updateKPIs(totals, DATA.static_kpi || {}, monthly);
+    updateGauges(totals, DATA.static_kpi || {});
+    buildCharts(monthly);
+    updateTable(ff);
+    updateFilterUI();
+}
+
+// ================================================================
+//  INIT
+// ================================================================
+Chart.defaults.font.family = "'Open Sans',-apple-system,sans-serif";
+Chart.defaults.font.size = 11;
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.plugins.legend.labels.usePointStyle = true;
+Chart.defaults.plugins.legend.labels.pointStyleWidth = 8;
+Chart.defaults.elements.bar.borderRadius = 4;
+Chart.defaults.elements.line.tension = 0.35;
+// V2: Cohesive teal-based default color cycle
+Chart.defaults.backgroundColor = ['rgba(15,118,110,0.7)','rgba(27,54,93,0.7)','rgba(0,217,165,0.7)','rgba(100,116,139,0.5)','rgba(17,94,88,0.7)','rgba(45,212,191,0.7)'];
+Chart.defaults.borderColor = '#e2e8f0';
+
+buildLayout();
+populateFilterDropdowns();
+DashState.subscribe(render);
+render();
+<\\/script>
+</body>
+</html>`;
+
+
+// ================================================================
+//  DEFAULT SAMPLE DATA
+// ================================================================
+const DEFAULT_CONFIG = `{
+  "title": "MSP Performance Overview",
+  "subtitle": "Revenue, SLA, tickets, utilization, and satisfaction across all clients",
+  "sources": "Autotask PSA via Power BI",
+  "filters": ["company", "time"],
+  "kpi_rows": [
+    [
+      {"label": "Total Revenue", "color": "teal", "metric": "sum:rev", "format": "eur"},
+      {"label": "Tickets Created", "color": "blue", "metric": "sum:t_cr", "format": "num"},
+      {"label": "Billable Hours", "color": "amber", "metric": "sum:hrs", "format": "hrs"},
+      {"label": "Avg CSAT", "color": "green", "metric": "wavg:csat_sum:csat_n", "format": "rating"}
+    ],
+    [
+      {"label": "Tickets Resolved", "color": "teal", "metric": "sum:t_res", "format": "num"},
+      {"label": "First Response SLA", "color": "green", "metric": "ratio:fr_met:t_cr", "format": "pct"},
+      {"label": "Avg Hourly Rate", "color": "blue", "metric": "ratio:rev:hrs", "format": "eur"},
+      {"label": "Open Tickets", "color": "red", "metric": "sum:t_open", "format": "num"}
+    ]
+  ],
+  "gauges": [
+    {"label": "FR SLA", "metric": "ratio:fr_met:t_cr", "color": "#0f766e", "target": 0.85, "target_label": "Target: 85%", "max": 1},
+    {"label": "Resolution", "metric": "ratio:res_met:t_cr", "color": "#16a34a", "target": 0.90, "target_label": "Target: 90%", "max": 1},
+    {"label": "Utilization", "metric": "ratio:hrs:total_hrs", "color": "#1B365D", "target": 0.70, "target_label": "Target: 70%", "max": 1},
+    {"label": "CSAT", "metric": "wavg:csat_sum:csat_n", "color": "#d97706", "format": "rating", "target_label": "Out of 5.0", "max": 5}
+  ],
+  "charts": [
+    {
+      "title": "Revenue & Hours Trend", "badge": "12 months",
+      "series": [
+        {"label": "Revenue", "field": "rev", "color": "#0f766e", "type": "bar", "bg": "rgba(15,118,110,0.65)"},
+        {"label": "Hours", "field": "hrs", "color": "#1B365D", "type": "line", "yAxisID": "y2"}
+      ],
+      "y_format": "eur", "y2": {"format": "hrs", "min": 0}
+    },
+    {
+      "title": "SLA Performance Trend", "badge": "12 months",
+      "series": [
+        {"label": "FR SLA %", "compute": "ratio", "numerator": "fr_met", "denominator": "t_cr", "color": "#0f766e", "type": "line", "tooltip_format": "pct"},
+        {"label": "Resolution SLA %", "compute": "ratio", "numerator": "res_met", "denominator": "t_cr", "color": "#16a34a", "type": "line", "tooltip_format": "pct"}
+      ],
+      "y_format": "pct", "y_min": 0.5, "y_max": 1
+    }
+  ],
+  "table": {
+    "title": "Client Performance", "mode": "company",
+    "columns": [
+      {"label": "#", "type": "rank"},
+      {"label": "Client", "type": "name"},
+      {"label": "Revenue", "field": "rev", "format": "eur"},
+      {"label": "Tickets", "field": "t_cr", "format": "num"},
+      {"label": "Hours", "field": "hrs", "format": "hrs"},
+      {"label": "FR SLA", "type": "derived", "calc": "fr_met/t_cr", "format": "pct"},
+      {"label": "Res SLA", "type": "derived", "calc": "res_met/t_cr", "format": "pct"},
+      {"label": "CSAT", "type": "derived", "calc": "csat_sum/csat_n", "format": "rating"}
+    ],
+    "sort": "rev", "order": "desc", "limit": 10
+  }
+}`;
+
+const DEFAULT_DATA = `{
+  "refreshed": "2026-03-04T14:30:00Z",
+  "dim": {
+    "companies": ["Acme Corp","TechFlow Solutions","DataWise BV","CloudNine IT","NetPulse","Bright Systems","Velocity Group","Summit Digital"],
+    "resources": [],
+    "queues": []
+  },
+  "facts": [
+    {"c":0,"y":2025,"m":4,"rev":14200,"t_cr":42,"t_res":39,"t_open":8,"hrs":110,"total_hrs":155,"csat_sum":168,"csat_n":38,"fr_met":35,"res_met":37},
+    {"c":0,"y":2025,"m":5,"rev":15800,"t_cr":47,"t_res":44,"t_open":11,"hrs":125,"total_hrs":170,"csat_sum":190,"csat_n":44,"fr_met":40,"res_met":42},
+    {"c":0,"y":2025,"m":6,"rev":16400,"t_cr":50,"t_res":47,"t_open":14,"hrs":132,"total_hrs":178,"csat_sum":205,"csat_n":48,"fr_met":42,"res_met":45},
+    {"c":0,"y":2025,"m":7,"rev":15000,"t_cr":45,"t_res":43,"t_open":16,"hrs":120,"total_hrs":165,"csat_sum":180,"csat_n":42,"fr_met":38,"res_met":40},
+    {"c":0,"y":2025,"m":8,"rev":18000,"t_cr":52,"t_res":49,"t_open":19,"hrs":140,"total_hrs":185,"csat_sum":215,"csat_n":50,"fr_met":44,"res_met":47},
+    {"c":0,"y":2025,"m":9,"rev":16500,"t_cr":48,"t_res":45,"t_open":22,"hrs":130,"total_hrs":175,"csat_sum":192,"csat_n":45,"fr_met":41,"res_met":43},
+    {"c":0,"y":2025,"m":10,"rev":17200,"t_cr":49,"t_res":47,"t_open":24,"hrs":135,"total_hrs":180,"csat_sum":200,"csat_n":47,"fr_met":42,"res_met":45},
+    {"c":0,"y":2025,"m":11,"rev":19500,"t_cr":55,"t_res":52,"t_open":27,"hrs":148,"total_hrs":195,"csat_sum":228,"csat_n":53,"fr_met":47,"res_met":50},
+    {"c":0,"y":2025,"m":12,"rev":14800,"t_cr":38,"t_res":36,"t_open":29,"hrs":105,"total_hrs":150,"csat_sum":158,"csat_n":36,"fr_met":33,"res_met":35},
+    {"c":0,"y":2026,"m":1,"rev":17800,"t_cr":51,"t_res":48,"t_open":32,"hrs":138,"total_hrs":182,"csat_sum":210,"csat_n":49,"fr_met":43,"res_met":46},
+    {"c":0,"y":2026,"m":2,"rev":18600,"t_cr":53,"t_res":51,"t_open":34,"hrs":142,"total_hrs":188,"csat_sum":222,"csat_n":52,"fr_met":45,"res_met":48},
+    {"c":0,"y":2026,"m":3,"rev":19200,"t_cr":54,"t_res":52,"t_open":36,"hrs":145,"total_hrs":190,"csat_sum":225,"csat_n":53,"fr_met":46,"res_met":49},
+    {"c":1,"y":2025,"m":4,"rev":20500,"t_cr":28,"t_res":27,"t_open":4,"hrs":88,"total_hrs":128,"csat_sum":122,"csat_n":26,"fr_met":24,"res_met":26},
+    {"c":1,"y":2025,"m":5,"rev":21800,"t_cr":31,"t_res":29,"t_open":6,"hrs":92,"total_hrs":132,"csat_sum":135,"csat_n":29,"fr_met":27,"res_met":28},
+    {"c":1,"y":2025,"m":6,"rev":23500,"t_cr":33,"t_res":31,"t_open":8,"hrs":98,"total_hrs":138,"csat_sum":145,"csat_n":31,"fr_met":28,"res_met":30},
+    {"c":1,"y":2025,"m":7,"rev":22000,"t_cr":30,"t_res":28,"t_open":10,"hrs":95,"total_hrs":135,"csat_sum":130,"csat_n":28,"fr_met":26,"res_met":27},
+    {"c":1,"y":2025,"m":8,"rev":24000,"t_cr":35,"t_res":33,"t_open":12,"hrs":105,"total_hrs":145,"csat_sum":155,"csat_n":33,"fr_met":30,"res_met":32},
+    {"c":1,"y":2025,"m":9,"rev":21000,"t_cr":28,"t_res":27,"t_open":13,"hrs":88,"total_hrs":128,"csat_sum":120,"csat_n":26,"fr_met":24,"res_met":26},
+    {"c":1,"y":2025,"m":10,"rev":25200,"t_cr":36,"t_res":34,"t_open":15,"hrs":108,"total_hrs":148,"csat_sum":158,"csat_n":34,"fr_met":31,"res_met":33},
+    {"c":1,"y":2025,"m":11,"rev":26800,"t_cr":38,"t_res":37,"t_open":16,"hrs":115,"total_hrs":155,"csat_sum":168,"csat_n":36,"fr_met":33,"res_met":35},
+    {"c":1,"y":2025,"m":12,"rev":20500,"t_cr":25,"t_res":24,"t_open":17,"hrs":82,"total_hrs":120,"csat_sum":110,"csat_n":24,"fr_met":22,"res_met":23},
+    {"c":1,"y":2026,"m":1,"rev":24500,"t_cr":34,"t_res":33,"t_open":18,"hrs":102,"total_hrs":142,"csat_sum":150,"csat_n":32,"fr_met":29,"res_met":31},
+    {"c":1,"y":2026,"m":2,"rev":25800,"t_cr":37,"t_res":35,"t_open":20,"hrs":110,"total_hrs":150,"csat_sum":162,"csat_n":35,"fr_met":32,"res_met":34},
+    {"c":1,"y":2026,"m":3,"rev":27000,"t_cr":39,"t_res":38,"t_open":21,"hrs":118,"total_hrs":158,"csat_sum":172,"csat_n":37,"fr_met":34,"res_met":36},
+    {"c":2,"y":2025,"m":4,"rev":7200,"t_cr":18,"t_res":17,"t_open":3,"hrs":52,"total_hrs":75,"csat_sum":74,"csat_n":16,"fr_met":15,"res_met":16},
+    {"c":2,"y":2025,"m":5,"rev":7800,"t_cr":20,"t_res":19,"t_open":4,"hrs":56,"total_hrs":80,"csat_sum":82,"csat_n":18,"fr_met":17,"res_met":18},
+    {"c":2,"y":2025,"m":6,"rev":8500,"t_cr":22,"t_res":21,"t_open":5,"hrs":62,"total_hrs":88,"csat_sum":90,"csat_n":20,"fr_met":19,"res_met":20},
+    {"c":2,"y":2025,"m":7,"rev":8000,"t_cr":20,"t_res":19,"t_open":6,"hrs":60,"total_hrs":85,"csat_sum":82,"csat_n":18,"fr_met":17,"res_met":18},
+    {"c":2,"y":2025,"m":8,"rev":9500,"t_cr":25,"t_res":24,"t_open":7,"hrs":70,"total_hrs":98,"csat_sum":105,"csat_n":23,"fr_met":21,"res_met":23},
+    {"c":2,"y":2025,"m":9,"rev":8800,"t_cr":22,"t_res":21,"t_open":8,"hrs":65,"total_hrs":92,"csat_sum":92,"csat_n":20,"fr_met":19,"res_met":20},
+    {"c":2,"y":2025,"m":10,"rev":9200,"t_cr":24,"t_res":23,"t_open":9,"hrs":68,"total_hrs":95,"csat_sum":100,"csat_n":22,"fr_met":20,"res_met":22},
+    {"c":2,"y":2025,"m":11,"rev":10200,"t_cr":27,"t_res":26,"t_open":10,"hrs":75,"total_hrs":105,"csat_sum":112,"csat_n":25,"fr_met":23,"res_met":25},
+    {"c":2,"y":2025,"m":12,"rev":7500,"t_cr":18,"t_res":17,"t_open":11,"hrs":50,"total_hrs":72,"csat_sum":72,"csat_n":16,"fr_met":15,"res_met":16},
+    {"c":2,"y":2026,"m":1,"rev":9800,"t_cr":24,"t_res":23,"t_open":12,"hrs":70,"total_hrs":98,"csat_sum":100,"csat_n":22,"fr_met":20,"res_met":22},
+    {"c":2,"y":2026,"m":2,"rev":10500,"t_cr":26,"t_res":25,"t_open":13,"hrs":74,"total_hrs":102,"csat_sum":108,"csat_n":24,"fr_met":22,"res_met":24},
+    {"c":2,"y":2026,"m":3,"rev":11000,"t_cr":28,"t_res":27,"t_open":14,"hrs":78,"total_hrs":108,"csat_sum":115,"csat_n":26,"fr_met":24,"res_met":26},
+    {"c":3,"y":2025,"m":4,"rev":31000,"t_cr":62,"t_res":58,"t_open":12,"hrs":165,"total_hrs":220,"csat_sum":260,"csat_n":58,"fr_met":52,"res_met":55},
+    {"c":3,"y":2025,"m":5,"rev":33500,"t_cr":68,"t_res":65,"t_open":15,"hrs":178,"total_hrs":238,"csat_sum":285,"csat_n":64,"fr_met":57,"res_met":61},
+    {"c":3,"y":2025,"m":6,"rev":35000,"t_cr":72,"t_res":68,"t_open":19,"hrs":185,"total_hrs":248,"csat_sum":300,"csat_n":68,"fr_met":60,"res_met":64},
+    {"c":3,"y":2025,"m":7,"rev":32000,"t_cr":65,"t_res":62,"t_open":22,"hrs":170,"total_hrs":228,"csat_sum":272,"csat_n":62,"fr_met":55,"res_met":58},
+    {"c":3,"y":2025,"m":8,"rev":36000,"t_cr":75,"t_res":71,"t_open":26,"hrs":192,"total_hrs":255,"csat_sum":315,"csat_n":72,"fr_met":63,"res_met":67},
+    {"c":3,"y":2025,"m":9,"rev":34000,"t_cr":70,"t_res":67,"t_open":29,"hrs":180,"total_hrs":242,"csat_sum":295,"csat_n":67,"fr_met":58,"res_met":63},
+    {"c":3,"y":2025,"m":10,"rev":37500,"t_cr":78,"t_res":74,"t_open":33,"hrs":198,"total_hrs":262,"csat_sum":330,"csat_n":75,"fr_met":65,"res_met":70},
+    {"c":3,"y":2025,"m":11,"rev":40000,"t_cr":82,"t_res":79,"t_open":36,"hrs":210,"total_hrs":278,"csat_sum":350,"csat_n":80,"fr_met":69,"res_met":75},
+    {"c":3,"y":2025,"m":12,"rev":30000,"t_cr":55,"t_res":52,"t_open":39,"hrs":158,"total_hrs":212,"csat_sum":232,"csat_n":53,"fr_met":46,"res_met":49},
+    {"c":3,"y":2026,"m":1,"rev":36500,"t_cr":74,"t_res":71,"t_open":42,"hrs":190,"total_hrs":252,"csat_sum":310,"csat_n":71,"fr_met":62,"res_met":67},
+    {"c":3,"y":2026,"m":2,"rev":38000,"t_cr":77,"t_res":74,"t_open":45,"hrs":198,"total_hrs":262,"csat_sum":325,"csat_n":74,"fr_met":65,"res_met":70},
+    {"c":3,"y":2026,"m":3,"rev":39500,"t_cr":80,"t_res":77,"t_open":48,"hrs":205,"total_hrs":270,"csat_sum":338,"csat_n":77,"fr_met":67,"res_met":73},
+    {"c":4,"y":2025,"m":7,"rev":5500,"t_cr":15,"t_res":14,"t_open":3,"hrs":42,"total_hrs":60,"csat_sum":62,"csat_n":14,"fr_met":12,"res_met":13},
+    {"c":4,"y":2025,"m":8,"rev":6200,"t_cr":17,"t_res":16,"t_open":4,"hrs":48,"total_hrs":68,"csat_sum":70,"csat_n":16,"fr_met":14,"res_met":15},
+    {"c":4,"y":2025,"m":9,"rev":5800,"t_cr":16,"t_res":15,"t_open":5,"hrs":44,"total_hrs":62,"csat_sum":66,"csat_n":15,"fr_met":13,"res_met":14},
+    {"c":4,"y":2025,"m":10,"rev":6500,"t_cr":18,"t_res":17,"t_open":6,"hrs":50,"total_hrs":70,"csat_sum":75,"csat_n":17,"fr_met":15,"res_met":16},
+    {"c":4,"y":2025,"m":11,"rev":7000,"t_cr":19,"t_res":18,"t_open":7,"hrs":54,"total_hrs":76,"csat_sum":80,"csat_n":18,"fr_met":16,"res_met":17},
+    {"c":4,"y":2025,"m":12,"rev":5200,"t_cr":13,"t_res":12,"t_open":8,"hrs":38,"total_hrs":55,"csat_sum":54,"csat_n":12,"fr_met":11,"res_met":11},
+    {"c":4,"y":2026,"m":1,"rev":6800,"t_cr":18,"t_res":17,"t_open":9,"hrs":52,"total_hrs":72,"csat_sum":74,"csat_n":17,"fr_met":15,"res_met":16},
+    {"c":4,"y":2026,"m":2,"rev":7200,"t_cr":20,"t_res":19,"t_open":10,"hrs":55,"total_hrs":78,"csat_sum":82,"csat_n":19,"fr_met":17,"res_met":18},
+    {"c":4,"y":2026,"m":3,"rev":7500,"t_cr":21,"t_res":20,"t_open":11,"hrs":58,"total_hrs":80,"csat_sum":88,"csat_n":20,"fr_met":18,"res_met":19},
+    {"c":5,"y":2025,"m":7,"rev":12500,"t_cr":35,"t_res":33,"t_open":6,"hrs":82,"total_hrs":115,"csat_sum":148,"csat_n":34,"fr_met":30,"res_met":31},
+    {"c":5,"y":2025,"m":8,"rev":13800,"t_cr":38,"t_res":36,"t_open":8,"hrs":90,"total_hrs":125,"csat_sum":162,"csat_n":37,"fr_met":33,"res_met":34},
+    {"c":5,"y":2025,"m":9,"rev":12000,"t_cr":33,"t_res":31,"t_open":10,"hrs":78,"total_hrs":110,"csat_sum":138,"csat_n":32,"fr_met":28,"res_met":30},
+    {"c":5,"y":2025,"m":10,"rev":14500,"t_cr":40,"t_res":38,"t_open":12,"hrs":95,"total_hrs":132,"csat_sum":170,"csat_n":39,"fr_met":34,"res_met":36},
+    {"c":5,"y":2025,"m":11,"rev":15200,"t_cr":42,"t_res":40,"t_open":14,"hrs":100,"total_hrs":138,"csat_sum":178,"csat_n":41,"fr_met":36,"res_met":38},
+    {"c":5,"y":2025,"m":12,"rev":11500,"t_cr":30,"t_res":28,"t_open":16,"hrs":72,"total_hrs":102,"csat_sum":125,"csat_n":29,"fr_met":25,"res_met":27},
+    {"c":5,"y":2026,"m":1,"rev":14000,"t_cr":39,"t_res":37,"t_open":18,"hrs":92,"total_hrs":128,"csat_sum":165,"csat_n":38,"fr_met":33,"res_met":35},
+    {"c":5,"y":2026,"m":2,"rev":14800,"t_cr":41,"t_res":39,"t_open":20,"hrs":96,"total_hrs":134,"csat_sum":174,"csat_n":40,"fr_met":35,"res_met":37},
+    {"c":5,"y":2026,"m":3,"rev":15500,"t_cr":43,"t_res":41,"t_open":22,"hrs":100,"total_hrs":140,"csat_sum":182,"csat_n":42,"fr_met":37,"res_met":39},
+    {"c":6,"y":2025,"m":10,"rev":4200,"t_cr":12,"t_res":11,"t_open":2,"hrs":32,"total_hrs":45,"csat_sum":50,"csat_n":11,"fr_met":10,"res_met":10},
+    {"c":6,"y":2025,"m":11,"rev":4800,"t_cr":14,"t_res":13,"t_open":3,"hrs":36,"total_hrs":50,"csat_sum":58,"csat_n":13,"fr_met":12,"res_met":12},
+    {"c":6,"y":2025,"m":12,"rev":3800,"t_cr":10,"t_res":9,"t_open":4,"hrs":28,"total_hrs":40,"csat_sum":42,"csat_n":10,"fr_met":8,"res_met":9},
+    {"c":6,"y":2026,"m":1,"rev":5200,"t_cr":15,"t_res":14,"t_open":5,"hrs":38,"total_hrs":55,"csat_sum":62,"csat_n":14,"fr_met":12,"res_met":13},
+    {"c":6,"y":2026,"m":2,"rev":5800,"t_cr":16,"t_res":15,"t_open":6,"hrs":42,"total_hrs":60,"csat_sum":68,"csat_n":15,"fr_met":13,"res_met":14},
+    {"c":6,"y":2026,"m":3,"rev":6200,"t_cr":18,"t_res":17,"t_open":7,"hrs":45,"total_hrs":64,"csat_sum":75,"csat_n":17,"fr_met":15,"res_met":16},
+    {"c":7,"y":2025,"m":7,"rev":18000,"t_cr":48,"t_res":45,"t_open":8,"hrs":118,"total_hrs":162,"csat_sum":200,"csat_n":46,"fr_met":40,"res_met":42},
+    {"c":7,"y":2025,"m":8,"rev":19500,"t_cr":52,"t_res":49,"t_open":11,"hrs":128,"total_hrs":175,"csat_sum":218,"csat_n":50,"fr_met":44,"res_met":46},
+    {"c":7,"y":2025,"m":9,"rev":17500,"t_cr":46,"t_res":43,"t_open":14,"hrs":112,"total_hrs":155,"csat_sum":192,"csat_n":44,"fr_met":38,"res_met":41},
+    {"c":7,"y":2025,"m":10,"rev":20500,"t_cr":55,"t_res":52,"t_open":17,"hrs":135,"total_hrs":185,"csat_sum":230,"csat_n":53,"fr_met":46,"res_met":49},
+    {"c":7,"y":2025,"m":11,"rev":22000,"t_cr":58,"t_res":55,"t_open":20,"hrs":142,"total_hrs":195,"csat_sum":245,"csat_n":56,"fr_met":49,"res_met":52},
+    {"c":7,"y":2025,"m":12,"rev":16500,"t_cr":42,"t_res":40,"t_open":22,"hrs":105,"total_hrs":148,"csat_sum":175,"csat_n":40,"fr_met":35,"res_met":38},
+    {"c":7,"y":2026,"m":1,"rev":21000,"t_cr":56,"t_res":53,"t_open":25,"hrs":138,"total_hrs":188,"csat_sum":235,"csat_n":54,"fr_met":47,"res_met":50},
+    {"c":7,"y":2026,"m":2,"rev":22500,"t_cr":59,"t_res":56,"t_open":28,"hrs":145,"total_hrs":198,"csat_sum":248,"csat_n":57,"fr_met":50,"res_met":53},
+    {"c":7,"y":2026,"m":3,"rev":23500,"t_cr":62,"t_res":60,"t_open":30,"hrs":152,"total_hrs":205,"csat_sum":262,"csat_n":60,"fr_met":53,"res_met":57}
+  ],
+  "facts_resource": [],
+  "facts_queue": [],
+  "static_kpi": {}
+}`;
+
+
+// ================================================================
+//  DOM REFERENCES
+// ================================================================
+const taConfig = document.getElementById('ta-config');
+const taData = document.getElementById('ta-data');
+const taUnified = document.getElementById('ta-unified');
+const pasteEmpty = document.getElementById('paste-empty');
+const pasteStatusEl = document.getElementById('paste-status');
+const iframe = document.getElementById('preview-iframe');
+const statusEl = document.getElementById('preview-status');
+const statusText = statusEl.querySelector('.status-text');
+const errorToast = document.getElementById('error-toast');
+
+// Show/hide empty state based on textarea content
+taUnified.addEventListener('input', function() {
+    pasteEmpty.classList.toggle('hidden', this.value.trim().length > 0);
+    pasteStatusEl.classList.remove('visible');
+});
+
+// Click empty state to focus textarea
+pasteEmpty.addEventListener('click', function() {
+    taUnified.focus();
+});
+
+// Detect Mac for keyboard shortcut display
+if (navigator.platform.indexOf('Mac') > -1) {
+    document.querySelectorAll('.paste-shortcut kbd').forEach((kbd, i) => {
+        if (kbd.textContent === 'Ctrl') kbd.textContent = '\u2318';
+    });
+}
+
+let errorTimeout = null;
+let lastRenderedHTML = '';
+
+// ================================================================
+//  POPULATE DEFAULTS
+// ================================================================
+taConfig.value = DEFAULT_CONFIG;
+taData.value = DEFAULT_DATA;
+// Show combined JSON in unified textarea for the demo
+taUnified.value = JSON.stringify({ config: JSON.parse(DEFAULT_CONFIG), data: JSON.parse(DEFAULT_DATA) }, null, 2);
+pasteEmpty.classList.add('hidden');
+
+// ================================================================
+//  UTILITY FUNCTIONS
+// ================================================================
+function showError(msg) {
+    errorToast.textContent = msg;
+    errorToast.classList.add('visible');
+    clearTimeout(errorTimeout);
+    errorTimeout = setTimeout(() => {
+        errorToast.classList.remove('visible');
+    }, 5000);
+}
+
+function setStatus(state, text) {
+    statusEl.className = 'preview-status ' + state;
+    statusText.textContent = text;
+}
+
+function validateJSON(str, label) {
+    try {
+        const parsed = JSON.parse(str);
+        return { ok: true, data: parsed };
+    } catch (e) {
+        const match = e.message.match(/position (\d+)/);
+        let hint = '';
+        if (match) {
+            const pos = parseInt(match[1]);
+            const lines = str.substring(0, pos).split('\n');
+            hint = ' (line ' + lines.length + ', col ' + lines[lines.length - 1].length + ')';
+        }
+        return { ok: false, error: label + ': ' + e.message + hint };
+    }
+}
+
+// ================================================================
+//  RENDER DASHBOARD
+// ================================================================
+function splitUnifiedJSON(raw) {
+    // Try to parse as combined {"config": ..., "data": ...}
+    const result = validateJSON(raw, 'JSON');
+    if (!result.ok) return result;
+
+    const obj = result.data;
+
+    if (obj.config && obj.data) {
+        return { ok: true, config: obj.config, data: obj.data };
+    }
+    // Maybe it's just a config (has title + kpi_rows)
+    if (obj.title && obj.kpi_rows) {
+        return { ok: false, error: 'This looks like a config only (no data). The AI should output both config and data together.' };
+    }
+    // Maybe it's just data (has facts)
+    if (obj.facts) {
+        return { ok: false, error: 'This looks like data only (no config). The AI should output both config and data together.' };
+    }
+
+    return { ok: false, error: 'Unrecognized JSON structure. Expected: {"config": {...}, "data": {...}}' };
+}
+
+function showPasteStatus(msg, isError) {
+    pasteStatusEl.textContent = msg;
+    pasteStatusEl.classList.add('visible');
+    pasteStatusEl.classList.toggle('error', !!isError);
+}
+
+function renderDashboard() {
+    // If unified textarea has content, use it (auto-split)
+    const unified = taUnified.value.trim();
+    if (unified) {
+        const split = splitUnifiedJSON(unified);
+        if (!split.ok) {
+            showError(split.error);
+            showPasteStatus(split.error, true);
+            setStatus('error', 'JSON Error');
+            return;
+        }
+        taConfig.value = JSON.stringify(split.config, null, 2);
+        taData.value = JSON.stringify(split.data, null, 2);
+        showPasteStatus('Config + Data detected', false);
+    }
+
+    // Fallback: read from split textareas
+    const configResult = validateJSON(taConfig.value.trim(), 'Config');
+    if (!configResult.ok) {
+        showError(configResult.error);
+        setStatus('error', 'JSON Error');
+        return;
+    }
+
+    const dataResult = validateJSON(taData.value.trim(), 'Data');
+    if (!dataResult.ok) {
+        showError(dataResult.error);
+        setStatus('error', 'JSON Error');
+        return;
+    }
+
+    setStatus('', 'Rendering...');
+
+    // Build the full HTML by replacing placeholders in the template
+    let html = DASHBOARD_TEMPLATE;
+    html = html.replace('__DASH_CONFIG_PLACEHOLDER__', taConfig.value.trim());
+    html = html.replace('__DATA_JSON_PLACEHOLDER__', taData.value.trim());
+    html = html.replace(/<\\\/script>/g, '<\/script>');
+
+    lastRenderedHTML = html;
+
+    // Write to iframe
+    iframe.srcdoc = html;
+
+    // Wait for iframe to load and set status
+    iframe.onload = function() {
+        setStatus('ready', 'Rendered');
+    };
+}
+
+// ================================================================
+//  PASTE FROM COPILOT
+// ================================================================
+async function pasteFromCopilot() {
+    try {
+        const text = await navigator.clipboard.readText();
+        if (!text || !text.trim()) {
+            showError('Clipboard is empty. Copy the JSON from your AI tool first.');
+            return;
+        }
+        taUnified.value = text.trim();
+        pasteEmpty.classList.add('hidden');
+        renderDashboard();
+    } catch (err) {
+        // Clipboard API denied — fallback: focus textarea for manual Ctrl+V
+        taUnified.focus();
+        showPasteStatus('Press Ctrl+V to paste from clipboard', false);
+    }
+}
+
+// ================================================================
+//  DOWNLOAD HTML
+// ================================================================
+function downloadHTML() {
+    if (!lastRenderedHTML) {
+        showError('Nothing to download. Click "Render" first.');
+        return;
+    }
+
+    const blob = new Blob([lastRenderedHTML], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'proxuma-dashboard.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// ================================================================
+//  CLEAR
+// ================================================================
+function clearAll() {
+    if (!confirm('Clear everything and start fresh?')) return;
+    taUnified.value = '';
+    taConfig.value = '';
+    taData.value = '';
+    iframe.srcdoc = '';
+    lastRenderedHTML = '';
+    pasteEmpty.classList.remove('hidden');
+    pasteStatusEl.classList.remove('visible');
+    setStatus('', 'Idle');
+}
+
+// ================================================================
+//  EVENT LISTENERS
+// ================================================================
+document.getElementById('btn-render').addEventListener('click', renderDashboard);
+document.getElementById('btn-paste').addEventListener('click', pasteFromCopilot);
+document.getElementById('btn-download').addEventListener('click', downloadHTML);
+document.getElementById('btn-clear').addEventListener('click', clearAll);
+
+// Keyboard shortcut: Ctrl+Enter / Cmd+Enter to render
+document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        renderDashboard();
+    }
+});
+
+// Auto-render when pasting into unified textarea
+taUnified.addEventListener('paste', function() {
+    setTimeout(function() {
+        pasteEmpty.classList.add('hidden');
+        renderDashboard();
+    }, 50);
+});
+
+// ================================================================
+//  AUTO-RENDER ON LOAD
+// ================================================================
+window.addEventListener('DOMContentLoaded', function() {
+    setTimeout(renderDashboard, 100);
+});
+</script>
+
+</body>
+</html>

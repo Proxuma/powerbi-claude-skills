@@ -1,0 +1,146 @@
+"""Two-pass anonymizer: deterministic registry + Presidio safety net.
+
+Pass 1: Replace known entities from the EntityRegistry (fast, deterministic).
+Pass 2: Run Presidio NLP on remaining text to catch unexpected PII.
+
+The mapping is accumulated across all tool calls in a session.
+"""
+
+import re
+from typing import Optional
+
+from server.entity_registry import EntityRegistry
+
+
+class Anonymizer:
+    def __init__(
+        self,
+        registry: EntityRegistry,
+        presidio_enabled: bool = True,
+        enabled: bool = True,
+    ):
+        self._registry = registry
+        self._presidio_enabled = presidio_enabled
+        self._enabled = enabled
+        self._presidio_mapping: dict[str, str] = {}   # alias -> real value
+        self._presidio_counter: dict[str, int] = {}    # entity_type -> counter
+        self._analyzer = None
+        self._anonymizer_engine = None
+
+    # ------------------------------------------------------------------
+    # Presidio lazy loading
+    # ------------------------------------------------------------------
+
+    def _get_presidio(self):
+        """Lazy-load Presidio engines (heavy imports deferred to first use)."""
+        if self._analyzer is None:
+            from presidio_analyzer import AnalyzerEngine
+            from presidio_analyzer.nlp_engine import NlpEngineProvider
+            from presidio_anonymizer import AnonymizerEngine
+
+            provider = NlpEngineProvider(nlp_configuration={
+                "nlp_engine_name": "spacy",
+                "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
+            })
+            nlp_engine = provider.create_engine()
+            self._analyzer = AnalyzerEngine(nlp_engine=nlp_engine)
+            self._anonymizer_engine = AnonymizerEngine()
+        return self._analyzer, self._anonymizer_engine
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def anonymize_text(self, text: str) -> str:
+        """Two-pass anonymization on a text string."""
+        if not self._enabled or not text or not isinstance(text, str):
+            return text
+
+        # Pass 1: deterministic replacement via EntityRegistry
+        result = self._registry.anonymize_text(text)
+
+        # Pass 2: Presidio NLP safety net
+        if self._presidio_enabled:
+            result = self._presidio_pass(result)
+
+        return result
+
+    def anonymize_json(self, data):
+        """Recursively anonymize all string values in a JSON-like structure."""
+        if not self._enabled:
+            return data
+        if isinstance(data, str):
+            return self.anonymize_text(data)
+        elif isinstance(data, dict):
+            return {k: self.anonymize_json(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self.anonymize_json(item) for item in data]
+        return data
+
+    def get_full_mapping(self) -> dict[str, str]:
+        """Return combined mapping: registry aliases + Presidio detections."""
+        mapping = dict(self._registry.get_mapping())
+        mapping.update(self._presidio_mapping)
+        return mapping
+
+    def get_stats(self) -> dict:
+        return {
+            "registry_entities": len(self._registry.get_mapping()),
+            "presidio_detections": len(self._presidio_mapping),
+            "is_degraded": self._registry.is_degraded,
+            "warnings": self._registry.get_warnings(),
+        }
+
+    # ------------------------------------------------------------------
+    # Presidio pass internals
+    # ------------------------------------------------------------------
+
+    def _presidio_pass(self, text: str) -> str:
+        """Run Presidio NER and replace detections with indexed tokens."""
+        try:
+            analyzer, _ = self._get_presidio()
+        except Exception:
+            return text
+
+        results = analyzer.analyze(text=text, language="en", score_threshold=0.4)
+        if not results:
+            return text
+
+        # Sort by start position descending so replacements don't shift offsets
+        results = sorted(results, key=lambda r: r.start, reverse=True)
+
+        for detection in results:
+            original = text[detection.start:detection.end]
+
+            # Skip values already replaced by Pass 1
+            if self._is_already_aliased(original):
+                continue
+
+            # Reuse existing alias for the same detected value
+            existing = self._find_existing_presidio_alias(original)
+            if existing:
+                alias = existing
+            else:
+                entity_type = detection.entity_type
+                count = self._presidio_counter.get(entity_type, 0)
+                self._presidio_counter[entity_type] = count + 1
+                alias = f"<{entity_type}_{count + 1}>"
+                self._presidio_mapping[alias] = original
+
+            text = text[:detection.start] + alias + text[detection.end:]
+
+        return text
+
+    def _is_already_aliased(self, text: str) -> bool:
+        """Check if text looks like an alias produced by Pass 1."""
+        return bool(re.match(
+            r'^(Client_[A-Z0-9]+|Resource_\d+|Contact_\d+)$', text,
+        ))
+
+    def _find_existing_presidio_alias(self, original: str) -> Optional[str]:
+        """Return an existing Presidio alias for the same real value, if any."""
+        norm = original.strip().lower()
+        for alias, real in self._presidio_mapping.items():
+            if real.strip().lower() == norm:
+                return alias
+        return None

@@ -1,0 +1,43 @@
+{
+  "title": "Project Performance Dashboard",
+  "subtitle": "Budget utilization, hours tracking, and milestone progress by project",
+  "sources": "Autotask PSA via Power BI",
+  "filters": ["company", "time"],
+  "kpi_rows": [
+    [
+      {"label": "Budget Used", "color": "teal", "metric": "ratio:actual_hrs:budget_hrs", "format": "pct"},
+      {"label": "Actual Hours", "color": "blue", "metric": "sum:actual_hrs", "format": "hrs"}
+    ],
+    [
+      {"label": "Budget Hours", "color": "amber", "metric": "sum:budget_hrs", "format": "hrs"},
+      {"label": "Milestones Complete", "color": "green", "metric": "sum:milestones_done", "format": "num"}
+    ]
+  ],
+  "gauges": [
+    {"label": "Budget", "metric": "ratio:actual_hrs:budget_hrs", "color": "#0f766e", "target": 1.0, "target_label": "100% = on budget", "max": 1.5}
+  ],
+  "charts": [
+    {
+      "title": "Hours: Actual vs Budget by Month", "badge": "Monthly", "full": true,
+      "series": [
+        {"label": "Actual Hours", "field": "actual_hrs", "color": "#0f766e", "type": "bar", "bg": "rgba(15,118,110,0.7)"},
+        {"label": "Budget Hours", "field": "budget_hrs", "color": "#94a3b8", "type": "bar", "bg": "rgba(148,163,184,0.3)"},
+        {"label": "Milestones", "field": "milestones_done", "color": "#1B365D", "type": "line", "yAxisID": "y2"}
+      ],
+      "y_format": "hrs",
+      "y2": {"format": "num", "min": 0}
+    }
+  ],
+  "table": {
+    "title": "Project Summary", "mode": "company",
+    "columns": [
+      {"label": "#", "type": "rank"},
+      {"label": "Project", "type": "name"},
+      {"label": "Actual Hrs", "field": "actual_hrs", "format": "hrs"},
+      {"label": "Budget Hrs", "field": "budget_hrs", "format": "hrs"},
+      {"label": "Budget %", "type": "derived", "calc": "actual_hrs/budget_hrs", "format": "pct"},
+      {"label": "Milestones", "field": "milestones_done", "format": "num"}
+    ],
+    "sort": "actual_hrs", "order": "desc", "limit": 15
+  }
+}
