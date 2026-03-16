@@ -11,7 +11,6 @@ You ask a business question. The AI queries your data model, anonymizes it, and 
 | **MCP Server** | Python server connecting AI tools to Power BI and Fabric APIs |
 | **Report Prompt** | Generates standalone HTML reports with KPIs, tables, analysis, and findings |
 | **QBR Prompt** | Generates Quarterly Business Review reports |
-| **Dashboard Prompt** | Generates interactive dashboard mockups with Power BI build instructions |
 | **Project Report Prompt** | Generates project status reports |
 | **Data Anonymization** | Two-pass anonymization: deterministic aliases + NLP safety net |
 | **Setup Wizard** | Auto-discovers workspaces, datasets, and sensitive columns |
@@ -70,7 +69,6 @@ Import these as slash commands or paste them as system prompts.
 |------|-----|
 | `prompts/powerbireport.md` | `#powerbireport what is my monthly revenue trend?` |
 | `prompts/powerbireportQBR.md` | `#powerbireportQBR Q1 2026` |
-| `prompts/powerbidashboard.md` | `#powerbidashboard SLA performance` |
 | `prompts/projectreport.md` | `#projectreport Project Alpha` |
 | `prompts/powerbi.md` | General Power BI data questions |
 
@@ -166,7 +164,6 @@ powerbi-claude-skills/
 ├── prompts/
 │   ├── powerbireport.md       # Report generator
 │   ├── powerbireportQBR.md    # QBR report generator
-│   ├── powerbidashboard.md    # Dashboard builder
 │   ├── projectreport.md       # Project report generator
 │   └── powerbi.md             # General Power BI queries
 ├── templates/
