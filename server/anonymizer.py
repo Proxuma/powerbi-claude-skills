@@ -6,7 +6,10 @@ Pass 2: Run Presidio NLP on remaining text to catch unexpected PII.
 The mapping is accumulated across all tool calls in a session.
 """
 
+import hmac
+import os
 import re
+import struct
 from typing import Optional
 
 from server.entity_registry import EntityRegistry
@@ -56,12 +59,17 @@ _DUTCH_NAME_PATTERNS = [
 ]
 
 
+_CURRENCY_PATTERN = re.compile(r"([€$])\s?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)")
+
+
 class Anonymizer:
     def __init__(
         self,
         registry: EntityRegistry,
         presidio_enabled: bool = True,
         enabled: bool = True,
+        anonymize_financials: bool = False,
+        financial_noise_pct: int = 10,
     ):
         self._registry = registry
         self._presidio_enabled = presidio_enabled
@@ -70,6 +78,9 @@ class Anonymizer:
         self._presidio_counter: dict[str, int] = {}    # entity_type -> counter
         self._analyzer = None
         self._anonymizer_engine = None
+        self._anonymize_financials = anonymize_financials
+        self._financial_noise_pct = financial_noise_pct
+        self._session_key = os.urandom(32)
 
     # ------------------------------------------------------------------
     # Presidio lazy loading
@@ -109,6 +120,9 @@ class Anonymizer:
 
         # Pass 3: Dutch name regex
         result = self._dutch_name_pass(result)
+
+        # Pass 4: Financial noise (if enabled)
+        result = self._financial_pass(result)
 
         return result
 
@@ -195,6 +209,36 @@ class Anonymizer:
                     self._presidio_mapping[alias] = name
                 text = text.replace(name, alias)
         return text
+
+    def _financial_pass(self, text: str) -> str:
+        """Apply deterministic noise to currency amounts. US/invariant format only."""
+        if not self._anonymize_financials:
+            return text
+
+        def _noise_amount(match):
+            symbol = match.group(1)
+            raw = match.group(2)
+            parts = raw.split(".")
+            integer_str = parts[0].replace(",", "")
+            if not integer_str.isdigit():
+                return match.group(0)
+
+            cents_str = parts[1] if len(parts) > 1 else None
+            value_cents = int(integer_str) * 100 + (int(cents_str) if cents_str else 0)
+
+            h = hmac.new(self._session_key, str(value_cents).encode(), "sha256").digest()
+            noise_factor = struct.unpack(">H", h[:2])[0] / 65535
+            noise_range = self._financial_noise_pct / 100
+            noise_multiplier = 1 + (noise_factor * 2 - 1) * noise_range
+
+            noised_cents = int(value_cents * noise_multiplier)
+            if cents_str is not None:
+                noised_str = f"{noised_cents // 100:,}.{noised_cents % 100:02d}"
+            else:
+                noised_str = f"{noised_cents // 100:,}"
+            return f"{symbol}{noised_str}"
+
+        return _CURRENCY_PATTERN.sub(_noise_amount, text)
 
     def _is_already_aliased(self, text: str) -> bool:
         """Check if text looks like an alias produced by Pass 1."""

@@ -186,3 +186,45 @@ def test_dutch_name_alias_consistency():
     # Extract the alias used in result1
     alias = result1.split(" created")[0]
     assert alias in result2
+
+
+def test_financial_pass_off_by_default():
+    """S6: Financial anonymization is disabled by default."""
+    registry = _make_registry({})
+    anon = Anonymizer(registry=registry, presidio_enabled=False)
+    text = "Revenue was €125,000.00 this quarter."
+    result = anon.anonymize_text(text)
+    assert "€125,000.00" in result
+
+
+def test_financial_pass_when_enabled():
+    """S6: When enabled, currency amounts are noised."""
+    registry = _make_registry({})
+    anon = Anonymizer(registry=registry, presidio_enabled=False, anonymize_financials=True, financial_noise_pct=10)
+    text = "Revenue was €125,000.00 this quarter."
+    result = anon.anonymize_text(text)
+    assert "€125,000.00" not in result
+    assert "€" in result
+
+
+def test_financial_pass_deterministic_same_session():
+    """S6: Same value in same session produces same noised output."""
+    registry = _make_registry({})
+    anon = Anonymizer(registry=registry, presidio_enabled=False, anonymize_financials=True, financial_noise_pct=10)
+    text1 = "Cost: €50,000"
+    text2 = "Total cost: €50,000"
+    result1 = anon.anonymize_text(text1)
+    result2 = anon.anonymize_text(text2)
+    import re
+    amounts1 = re.findall(r"€[\d.,]+", result1)
+    amounts2 = re.findall(r"€[\d.,]+", result2)
+    assert amounts1[0] == amounts2[0]
+
+
+def test_financial_pass_dollar_amounts():
+    """S6: Dollar amounts are also noised when enabled."""
+    registry = _make_registry({})
+    anon = Anonymizer(registry=registry, presidio_enabled=False, anonymize_financials=True, financial_noise_pct=10)
+    text = "Billed $2,500.00 to the client."
+    result = anon.anonymize_text(text)
+    assert "$2,500.00" not in result
