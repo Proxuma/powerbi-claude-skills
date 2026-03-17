@@ -55,6 +55,7 @@ def test_anonymizer_presidio_catches_unknown_pii():
     assert "john@example.com" not in result
 
 
+@pytest.mark.skipif(not HAS_PRESIDIO, reason="presidio not installed")
 def test_anonymizer_does_not_double_replace():
     registry = _make_registry({"Jan de Vries": "Resource_1"})
     anon = Anonymizer(registry=registry, presidio_enabled=True)
@@ -134,3 +135,54 @@ def test_presidio_still_catches_standalone_person_name():
     anon = Anonymizer(registry=registry, presidio_enabled=True)
     result = anon.anonymize_text("The ticket was assigned to John Smith for resolution")
     assert "John Smith" not in result
+
+
+def test_dutch_name_with_tussenvoegsel():
+    """M5: Dutch compound names with tussenvoegsels are anonymized."""
+    registry = _make_registry({})
+    anon = Anonymizer(registry=registry, presidio_enabled=False)
+    text = "Ticket assigned to Pieter van den Berg and Jan de Vries."
+    result = anon.anonymize_text(text)
+    assert "Pieter van den Berg" not in result
+    assert "Jan de Vries" not in result
+
+
+def test_dutch_name_double_barrel():
+    """M5: Hyphenated Dutch names are anonymized."""
+    registry = _make_registry({})
+    anon = Anonymizer(registry=registry, presidio_enabled=False)
+    text = "Jan-Willem de Groot handled the request."
+    result = anon.anonymize_text(text)
+    assert "Jan-Willem de Groot" not in result
+
+
+def test_dutch_name_initial_tussenvoegsel():
+    """M5: Initial + tussenvoegsel patterns are anonymized."""
+    registry = _make_registry({})
+    anon = Anonymizer(registry=registry, presidio_enabled=False)
+    text = "P. van den Berg approved the change."
+    result = anon.anonymize_text(text)
+    assert "P. van den Berg" not in result
+
+
+def test_dutch_months_not_anonymized():
+    """M5: Dutch month names should NOT be flagged as PII."""
+    registry = _make_registry({})
+    anon = Anonymizer(registry=registry, presidio_enabled=False)
+    text = "Ticket created in januari 2026, resolved on maandag."
+    result = anon.anonymize_text(text)
+    assert "januari" in result
+    assert "maandag" in result
+
+
+def test_dutch_name_alias_consistency():
+    """M5: Same Dutch name gets same alias across calls."""
+    registry = _make_registry({})
+    anon = Anonymizer(registry=registry, presidio_enabled=False)
+    text1 = "Pieter van den Berg created the ticket."
+    text2 = "The ticket was resolved by Pieter van den Berg."
+    result1 = anon.anonymize_text(text1)
+    result2 = anon.anonymize_text(text2)
+    # Extract the alias used in result1
+    alias = result1.split(" created")[0]
+    assert alias in result2
