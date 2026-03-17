@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -118,8 +119,10 @@ def write_config(workspace_id, workspace_name, dataset_id, dataset_name):
     config["datasets"] = datasets
 
     CACHE_DIR.mkdir(exist_ok=True)
+    os.chmod(CACHE_DIR, 0o700)
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
+    os.chmod(CONFIG_PATH, 0o600)
 
     return CONFIG_PATH
 
@@ -131,8 +134,10 @@ def download_config(url):
     config = resp.json()
 
     CACHE_DIR.mkdir(exist_ok=True)
+    os.chmod(CACHE_DIR, 0o700)
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
+    os.chmod(CONFIG_PATH, 0o600)
 
     return config
 

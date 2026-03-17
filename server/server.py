@@ -36,7 +36,7 @@ from server.auth import (
 from server.entity_registry import EntityRegistry
 from server.anonymizer import Anonymizer
 from server.mapping import MappingStore
-from server.utils import _format_data_result, MAX_DAX_ROWS, MAX_SCHEMA_BYTES, _truncate_dax_rows, _check_schema_size
+from server.utils import _format_data_result, MAX_DAX_ROWS, MAX_SCHEMA_BYTES, _truncate_dax_rows, _check_schema_size, _enforce_config_permissions
 from server.rate_limiter import RateLimiter
 from server.audit import AuditLogger
 
@@ -79,6 +79,10 @@ def load_config():
     env_dataset = os.environ.get("POWERBI_MCP_DATASET_ID")
     if env_dataset:
         config["default_dataset_id"] = env_dataset
+
+    # S5: Enforce permissions on config file
+    for path in [CONFIG_PATH, GLOBAL_CONFIG_PATH]:
+        _enforce_config_permissions(path)
 
     return config
 

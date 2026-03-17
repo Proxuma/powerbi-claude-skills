@@ -101,3 +101,13 @@ def test_plaintext_still_loads_when_encryption_off(tmp_path):
     store.save({"Client_A": "Acme Corp"}, {})
     loaded = store.load(store._session_id)
     assert loaded["mappings"]["Client_A"] == "Acme Corp"
+
+
+def test_config_chmod(tmp_path):
+    """S5: Config files get 0600 permissions."""
+    from server.utils import _enforce_config_permissions
+    config_file = tmp_path / "config.json"
+    config_file.write_text('{"test": true}')
+    os.chmod(config_file, 0o644)
+    _enforce_config_permissions(config_file)
+    assert oct(config_file.stat().st_mode & 0o777) == oct(0o600)

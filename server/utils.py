@@ -33,3 +33,12 @@ def _check_schema_size(schema_text: str, max_bytes: int) -> tuple:
     if size > max_bytes:
         return True, f"WARNING: Schema too large ({size:,} bytes, limit {max_bytes:,}). Use search_schema instead."
     return False, ""
+
+
+def _enforce_config_permissions(config_path) -> None:
+    """Ensure config file has 0600 permissions (owner read/write only)."""
+    import os
+    if config_path.exists():
+        current_mode = config_path.stat().st_mode & 0o777
+        if current_mode != 0o600:
+            os.chmod(config_path, 0o600)
