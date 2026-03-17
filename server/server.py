@@ -36,6 +36,7 @@ from server.auth import (
 from server.entity_registry import EntityRegistry
 from server.anonymizer import Anonymizer
 from server.mapping import MappingStore
+from server.utils import _format_data_result, MAX_DAX_ROWS, MAX_SCHEMA_BYTES, _truncate_dax_rows, _check_schema_size
 
 # User config — env vars > local config.json > ~/.powerbi-mcp/config.json
 CONFIG_PATH = Path(__file__).parent / "config.json"
@@ -166,6 +167,7 @@ def _save_mapping():
             _anonymizer_instance.get_full_mapping(),
             _anonymizer_instance.get_stats(),
         )
+
 
 def resolve_ids(arguments: dict, need_workspace: bool = True, need_dataset: bool = True) -> dict:
     """Resolve workspace/dataset IDs from arguments, falling back to config defaults."""
@@ -349,7 +351,7 @@ async def call_tool(name: str, arguments: dict):
             for ws in workspaces:
                 output += f"- {ws.get('name', 'Unknown')}\n  ID: {ws.get('id')}\n\n"
             _save_mapping()
-            return [TextContent(type="text", text=_anonymize_text(output))]
+            return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_workspaces"))]
 
         elif name == "list_datasets":
             args = resolve_ids(arguments, need_workspace=True, need_dataset=False)
@@ -383,7 +385,7 @@ async def call_tool(name: str, arguments: dict):
             for ds in datasets:
                 output += f"- {ds.get('name', 'Unknown')}\n  ID: {ds.get('id')}\n  Configured by: {ds.get('configuredBy', 'Unknown')}\n\n"
             _save_mapping()
-            return [TextContent(type="text", text=_anonymize_text(output))]
+            return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_datasets"))]
 
         elif name == "execute_dax":
             args = resolve_ids(arguments, need_workspace=False, need_dataset=True)
@@ -402,7 +404,7 @@ async def call_tool(name: str, arguments: dict):
             response.raise_for_status()
             anonymized_data = _anonymize_json(response.json())
             _save_mapping()
-            return [TextContent(type="text", text=json.dumps(anonymized_data, indent=2))]
+            return [TextContent(type="text", text=_format_data_result(anonymized_data, "execute_dax"))]
 
         elif name == "get_schema":
             args = resolve_ids(arguments)
@@ -432,7 +434,7 @@ async def call_tool(name: str, arguments: dict):
                                 if result_response.ok:
                                     anonymized_data = _anonymize_json(result_response.json())
                                     _save_mapping()
-                                    return [TextContent(type="text", text=json.dumps(anonymized_data, indent=2))]
+                                    return [TextContent(type="text", text=_format_data_result(anonymized_data, "get_schema"))]
                             elif data.get("status") == "Failed":
                                 return [TextContent(type="text", text=f"Failed: {data.get('error')}")]
                     return [TextContent(type="text", text="Timeout waiting for schema")]
@@ -440,7 +442,7 @@ async def call_tool(name: str, arguments: dict):
             response.raise_for_status()
             anonymized_data = _anonymize_json(response.json())
             _save_mapping()
-            return [TextContent(type="text", text=json.dumps(anonymized_data, indent=2))]
+            return [TextContent(type="text", text=_format_data_result(anonymized_data, "get_schema"))]
 
         elif name == "list_fabric_items":
             args = resolve_ids(arguments, need_workspace=True, need_dataset=False)
@@ -457,7 +459,7 @@ async def call_tool(name: str, arguments: dict):
             for item in items:
                 output += f"- {item.get('displayName')} ({item.get('type')})\n  ID: {item.get('id')}\n\n"
             _save_mapping()
-            return [TextContent(type="text", text=_anonymize_text(output))]
+            return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_fabric_items"))]
 
         elif name == "search_schema":
             args = resolve_ids(arguments)
@@ -506,7 +508,7 @@ async def call_tool(name: str, arguments: dict):
                 output += f"... and {len(matches) - 10} more results (refine your search term for more specific results)"
 
             _save_mapping()
-            return [TextContent(type="text", text=_anonymize_text(output))]
+            return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "search_schema"))]
 
         elif name == "list_measures":
             args = resolve_ids(arguments)
@@ -532,7 +534,7 @@ async def call_tool(name: str, arguments: dict):
                 output += f"- {m}\n"
 
             _save_mapping()
-            return [TextContent(type="text", text=_anonymize_text(output))]
+            return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_measures"))]
 
         elif name == "anonymization_status":
             anon = _init_anonymizer()
