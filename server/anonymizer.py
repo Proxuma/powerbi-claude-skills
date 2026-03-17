@@ -1,7 +1,9 @@
-"""Two-pass anonymizer: deterministic registry + Presidio safety net.
+"""Four-pass anonymizer: deterministic registry + Presidio + Dutch names + financial noise.
 
 Pass 1: Replace known entities from the EntityRegistry (fast, deterministic).
 Pass 2: Run Presidio NLP on remaining text to catch unexpected PII.
+Pass 3: Dutch name regex detection (tussenvoegsels).
+Pass 4: Financial noise (optional, HMAC-based deterministic noise).
 
 The mapping is accumulated across all tool calls in a session.
 """
@@ -158,7 +160,12 @@ class Anonymizer:
 
     def _presidio_pass(self, text: str) -> str:
         """Run Presidio NER and replace detections with indexed tokens."""
-        analyzer, _ = self._get_presidio()
+        try:
+            analyzer, _ = self._get_presidio()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Presidio runtime error: %s", e)
+            return text
 
         results = analyzer.analyze(text=text, language="en", score_threshold=0.7)
         if not results:

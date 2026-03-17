@@ -36,7 +36,7 @@ from server.auth import (
 from server.entity_registry import EntityRegistry
 from server.anonymizer import Anonymizer
 from server.mapping import MappingStore
-from server.utils import _format_data_result, MAX_DAX_ROWS, MAX_SCHEMA_BYTES, _truncate_dax_rows, _check_schema_size, _enforce_config_permissions
+from server.utils import _format_data_result, MAX_DAX_ROWS, MAX_SCHEMA_BYTES, _truncate_dax_rows, _check_schema_size, _enforce_config_permissions, _redact_free_text_columns, _build_health_status
 from server.rate_limiter import RateLimiter
 from server.audit import AuditLogger
 
@@ -97,7 +97,7 @@ _mapping_store = None
 
 
 def _init_anonymizer():
-    """Lazily initialize the two-pass anonymizer on first tool call."""
+    """Lazily initialize the four-pass anonymizer on first tool call."""
     global _anon_initialized, _anonymizer_instance, _mapping_store
 
     if _anon_initialized:
@@ -178,6 +178,22 @@ def _init_audit():
     return _audit
 
 
+def _check_rate_limit():
+    """Check rate limit and return TextContent error if exceeded, else None."""
+    rl = _init_rate_limiter()
+    allowed, wait = rl.check()
+    if not allowed:
+        status = rl.status()
+        return [
+            TextContent(
+                type="text",
+                text=f"Rate limit exceeded. {wait} seconds until next call is available. "
+                f"Status: {rl.remaining()} of {status['max_calls']} calls remaining.",
+            )
+        ]
+    return None
+
+
 def _log_audit(tool_name: str, arguments: dict, result_size: int = 0):
     """Log a tool call to the audit trail."""
     audit = _init_audit()
@@ -190,13 +206,13 @@ def _log_audit(tool_name: str, arguments: dict, result_size: int = 0):
 
 
 def _anonymize_text(text: str) -> str:
-    """Anonymize text using the two-pass anonymizer."""
+    """Anonymize text using the four-pass anonymizer."""
     anon = _init_anonymizer()
     return anon.anonymize_text(text)
 
 
 def _anonymize_json(data) -> any:
-    """Anonymize JSON data using the two-pass anonymizer."""
+    """Anonymize JSON data using the four-pass anonymizer."""
     anon = _init_anonymizer()
     return anon.anonymize_json(data)
 
@@ -370,6 +386,9 @@ async def list_tools():
 async def call_tool(name: str, arguments: dict):
     try:
         if name == "list_workspaces":
+            rate_error = _check_rate_limit()
+            if rate_error:
+                return rate_error
             response = requests.get(
                 "https://api.powerbi.com/v1.0/myorg/groups",
                 headers=get_powerbi_headers()
@@ -396,6 +415,9 @@ async def call_tool(name: str, arguments: dict):
             return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_workspaces"))]
 
         elif name == "list_datasets":
+            rate_error = _check_rate_limit()
+            if rate_error:
+                return rate_error
             args = resolve_ids(arguments, need_workspace=True, need_dataset=False)
             workspace_id = args.get("workspace_id")
             if not workspace_id:
@@ -431,16 +453,9 @@ async def call_tool(name: str, arguments: dict):
             return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_datasets"))]
 
         elif name == "execute_dax":
-            rl = _init_rate_limiter()
-            allowed, wait = rl.check()
-            if not allowed:
-                return [
-                    TextContent(
-                        type="text",
-                        text=f"Rate limit exceeded. {wait} seconds until next call is available. "
-                        f"Status: {rl.remaining()} of {rl._max_calls} calls remaining.",
-                    )
-                ]
+            rate_error = _check_rate_limit()
+            if rate_error:
+                return rate_error
             args = resolve_ids(arguments, need_workspace=False, need_dataset=True)
             dataset_id = args.get("dataset_id")
             if not dataset_id:
@@ -465,7 +480,6 @@ async def call_tool(name: str, arguments: dict):
                 result["results"][0]["tables"][0]["rows"] = truncated_rows
 
             # N2: Redact free-text columns before anonymization
-            from server.utils import _redact_free_text_columns
             free_text_cols = USER_CONFIG.get("anonymization", {}).get("free_text_columns", [])
             redacted_rows = _redact_free_text_columns(
                 result.get("results", [{}])[0].get("tables", [{}])[0].get("rows", []),
@@ -490,16 +504,9 @@ async def call_tool(name: str, arguments: dict):
             return contents
 
         elif name == "get_schema":
-            rl = _init_rate_limiter()
-            allowed, wait = rl.check()
-            if not allowed:
-                return [
-                    TextContent(
-                        type="text",
-                        text=f"Rate limit exceeded. {wait} seconds until next call is available. "
-                        f"Status: {rl.remaining()} of {rl._max_calls} calls remaining.",
-                    )
-                ]
+            rate_error = _check_rate_limit()
+            if rate_error:
+                return rate_error
             args = resolve_ids(arguments)
             workspace_id = args.get("workspace_id")
             dataset_id = args.get("dataset_id")
@@ -525,6 +532,12 @@ async def call_tool(name: str, arguments: dict):
                                     headers=get_fabric_headers()
                                 )
                                 if result_response.ok:
+                                    schema_text = json.dumps(result_response.json())
+                                    max_schema = USER_CONFIG.get("max_schema_bytes", MAX_SCHEMA_BYTES)
+                                    is_over, warning = _check_schema_size(schema_text, max_schema)
+                                    if is_over:
+                                        _log_audit(name, arguments, len(schema_text))
+                                        return [TextContent(type="text", text=warning)]
                                     anonymized_data = _anonymize_json(result_response.json())
                                     _save_mapping()
                                     _log_audit(name, arguments, 0)
@@ -534,12 +547,21 @@ async def call_tool(name: str, arguments: dict):
                     return [TextContent(type="text", text="Timeout waiting for schema")]
 
             response.raise_for_status()
+            schema_text = json.dumps(response.json())
+            max_schema = USER_CONFIG.get("max_schema_bytes", MAX_SCHEMA_BYTES)
+            is_over, warning = _check_schema_size(schema_text, max_schema)
+            if is_over:
+                _log_audit(name, arguments, len(schema_text))
+                return [TextContent(type="text", text=warning)]
             anonymized_data = _anonymize_json(response.json())
             _save_mapping()
             _log_audit(name, arguments, 0)
             return [TextContent(type="text", text=_format_data_result(anonymized_data, "get_schema"))]
 
         elif name == "list_fabric_items":
+            rate_error = _check_rate_limit()
+            if rate_error:
+                return rate_error
             args = resolve_ids(arguments, need_workspace=True, need_dataset=False)
             workspace_id = args.get("workspace_id")
             if not workspace_id:
@@ -558,16 +580,9 @@ async def call_tool(name: str, arguments: dict):
             return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_fabric_items"))]
 
         elif name == "search_schema":
-            rl = _init_rate_limiter()
-            allowed, wait = rl.check()
-            if not allowed:
-                return [
-                    TextContent(
-                        type="text",
-                        text=f"Rate limit exceeded. {wait} seconds until next call is available. "
-                        f"Status: {rl.remaining()} of {rl._max_calls} calls remaining.",
-                    )
-                ]
+            rate_error = _check_rate_limit()
+            if rate_error:
+                return rate_error
             args = resolve_ids(arguments)
             workspace_id = args.get("workspace_id")
             dataset_id = args.get("dataset_id")
@@ -618,6 +633,9 @@ async def call_tool(name: str, arguments: dict):
             return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "search_schema"))]
 
         elif name == "list_measures":
+            rate_error = _check_rate_limit()
+            if rate_error:
+                return rate_error
             args = resolve_ids(arguments)
             workspace_id = args.get("workspace_id")
             dataset_id = args.get("dataset_id")
@@ -645,7 +663,6 @@ async def call_tool(name: str, arguments: dict):
             return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_measures"))]
 
         elif name == "anonymization_status":
-            from server.utils import _build_health_status
             anon = _init_anonymizer()
             rl = _init_rate_limiter()
             audit = _init_audit()
