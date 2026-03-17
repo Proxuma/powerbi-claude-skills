@@ -1,6 +1,7 @@
 import json
 import asyncio
 import os
+import sys
 import time
 import base64
 import re
@@ -9,6 +10,22 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 import requests
+
+# --- Presidio startup guard (M1) ---
+try:
+    from presidio_analyzer import AnalyzerEngine
+    from presidio_anonymizer import AnonymizerEngine
+    import spacy
+    spacy.load("en_core_web_lg")
+except ImportError:
+    print("ERROR: Required dependencies missing.")
+    print("Install: pip install presidio-analyzer presidio-anonymizer spacy")
+    print("Then: python -m spacy download en_core_web_lg")
+    sys.exit(1)
+except OSError:
+    print("ERROR: spaCy model 'en_core_web_lg' not found.")
+    print("Install: python -m spacy download en_core_web_lg")
+    sys.exit(1)
 
 # Shared auth module
 from server.auth import (
@@ -19,6 +36,9 @@ from server.auth import (
 from server.entity_registry import EntityRegistry
 from server.anonymizer import Anonymizer
 from server.mapping import MappingStore
+from server.utils import _format_data_result, MAX_DAX_ROWS, MAX_SCHEMA_BYTES, _truncate_dax_rows, _check_schema_size, _enforce_config_permissions, _redact_free_text_columns, _build_health_status
+from server.rate_limiter import RateLimiter
+from server.audit import AuditLogger
 
 # User config — env vars > local config.json > ~/.powerbi-mcp/config.json
 CONFIG_PATH = Path(__file__).parent / "config.json"
@@ -60,6 +80,10 @@ def load_config():
     if env_dataset:
         config["default_dataset_id"] = env_dataset
 
+    # S5: Enforce permissions on config file
+    for path in [CONFIG_PATH, GLOBAL_CONFIG_PATH]:
+        _enforce_config_permissions(path)
+
     return config
 
 USER_CONFIG = load_config()
@@ -73,7 +97,7 @@ _mapping_store = None
 
 
 def _init_anonymizer():
-    """Lazily initialize the two-pass anonymizer on first tool call."""
+    """Lazily initialize the four-pass anonymizer on first tool call."""
     global _anon_initialized, _anonymizer_instance, _mapping_store
 
     if _anon_initialized:
@@ -130,14 +154,65 @@ def _init_anonymizer():
     return _anonymizer_instance
 
 
+_rate_limiter: RateLimiter | None = None
+_audit: AuditLogger | None = None
+
+
+def _init_rate_limiter():
+    global _rate_limiter
+    if _rate_limiter is None:
+        rl_config = USER_CONFIG.get("rate_limit", {})
+        _rate_limiter = RateLimiter(
+            max_calls=rl_config.get("max_calls", 50),
+            window_seconds=rl_config.get("window_seconds", 300),
+        )
+    return _rate_limiter
+
+
+def _init_audit():
+    global _audit
+    if _audit is None:
+        log_dir = Path.home() / ".powerbi-mcp" / "audit"
+        session_id = _mapping_store._session_id if _mapping_store else "unknown"
+        _audit = AuditLogger(log_dir=log_dir, session_id=session_id)
+    return _audit
+
+
+def _check_rate_limit():
+    """Check rate limit and return TextContent error if exceeded, else None."""
+    rl = _init_rate_limiter()
+    allowed, wait = rl.check()
+    if not allowed:
+        status = rl.status()
+        return [
+            TextContent(
+                type="text",
+                text=f"Rate limit exceeded. {wait} seconds until next call is available. "
+                f"Status: {rl.remaining()} of {status['max_calls']} calls remaining.",
+            )
+        ]
+    return None
+
+
+def _log_audit(tool_name: str, arguments: dict, result_size: int = 0):
+    """Log a tool call to the audit trail."""
+    audit = _init_audit()
+    audit.log_tool_call(
+        tool_name=tool_name,
+        params=arguments,
+        result_size=result_size,
+        anonymization_stats=_anonymizer_instance.get_stats() if _anonymizer_instance else {},
+    )
+
+
 def _anonymize_text(text: str) -> str:
-    """Anonymize text using the two-pass anonymizer."""
+    """Anonymize text using the four-pass anonymizer."""
     anon = _init_anonymizer()
     return anon.anonymize_text(text)
 
 
 def _anonymize_json(data) -> any:
-    """Anonymize JSON data using the two-pass anonymizer."""
+    """Anonymize JSON data using the four-pass anonymizer."""
     anon = _init_anonymizer()
     return anon.anonymize_json(data)
 
@@ -149,6 +224,7 @@ def _save_mapping():
             _anonymizer_instance.get_full_mapping(),
             _anonymizer_instance.get_stats(),
         )
+
 
 def resolve_ids(arguments: dict, need_workspace: bool = True, need_dataset: bool = True) -> dict:
     """Resolve workspace/dataset IDs from arguments, falling back to config defaults."""
@@ -310,6 +386,9 @@ async def list_tools():
 async def call_tool(name: str, arguments: dict):
     try:
         if name == "list_workspaces":
+            rate_error = _check_rate_limit()
+            if rate_error:
+                return rate_error
             response = requests.get(
                 "https://api.powerbi.com/v1.0/myorg/groups",
                 headers=get_powerbi_headers()
@@ -332,9 +411,13 @@ async def call_tool(name: str, arguments: dict):
             for ws in workspaces:
                 output += f"- {ws.get('name', 'Unknown')}\n  ID: {ws.get('id')}\n\n"
             _save_mapping()
-            return [TextContent(type="text", text=_anonymize_text(output))]
+            _log_audit(name, arguments, len(workspaces))
+            return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_workspaces"))]
 
         elif name == "list_datasets":
+            rate_error = _check_rate_limit()
+            if rate_error:
+                return rate_error
             args = resolve_ids(arguments, need_workspace=True, need_dataset=False)
             workspace_id = args.get("workspace_id")
             if not workspace_id:
@@ -366,9 +449,13 @@ async def call_tool(name: str, arguments: dict):
             for ds in datasets:
                 output += f"- {ds.get('name', 'Unknown')}\n  ID: {ds.get('id')}\n  Configured by: {ds.get('configuredBy', 'Unknown')}\n\n"
             _save_mapping()
-            return [TextContent(type="text", text=_anonymize_text(output))]
+            _log_audit(name, arguments, len(datasets))
+            return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_datasets"))]
 
         elif name == "execute_dax":
+            rate_error = _check_rate_limit()
+            if rate_error:
+                return rate_error
             args = resolve_ids(arguments, need_workspace=False, need_dataset=True)
             dataset_id = args.get("dataset_id")
             if not dataset_id:
@@ -383,11 +470,43 @@ async def call_tool(name: str, arguments: dict):
                 }
             )
             response.raise_for_status()
-            anonymized_data = _anonymize_json(response.json())
+            result = response.json()
+
+            # M2: Truncate rows if over limit
+            max_dax_rows = USER_CONFIG.get("max_dax_rows", MAX_DAX_ROWS)
+            rows = result.get("results", [{}])[0].get("tables", [{}])[0].get("rows", [])
+            truncated_rows, original_count = _truncate_dax_rows(rows, max_dax_rows)
+            if original_count > max_dax_rows:
+                result["results"][0]["tables"][0]["rows"] = truncated_rows
+
+            # N2: Redact free-text columns before anonymization
+            free_text_cols = USER_CONFIG.get("anonymization", {}).get("free_text_columns", [])
+            redacted_rows = _redact_free_text_columns(
+                result.get("results", [{}])[0].get("tables", [{}])[0].get("rows", []),
+                free_text_cols,
+            )
+            result["results"][0]["tables"][0]["rows"] = redacted_rows
+
+            anonymized_data = _anonymize_json(result)
             _save_mapping()
-            return [TextContent(type="text", text=json.dumps(anonymized_data, indent=2))]
+
+            contents = []
+            if original_count > max_dax_rows:
+                contents.append(TextContent(
+                    type="text",
+                    text=f"WARNING: Result truncated from {original_count} to {max_dax_rows} rows. Add TOPN() or WHERE filters to your query.",
+                ))
+            contents.append(TextContent(
+                type="text",
+                text=_format_data_result(anonymized_data, "execute_dax"),
+            ))
+            _log_audit(name, arguments, len(truncated_rows))
+            return contents
 
         elif name == "get_schema":
+            rate_error = _check_rate_limit()
+            if rate_error:
+                return rate_error
             args = resolve_ids(arguments)
             workspace_id = args.get("workspace_id")
             dataset_id = args.get("dataset_id")
@@ -413,19 +532,36 @@ async def call_tool(name: str, arguments: dict):
                                     headers=get_fabric_headers()
                                 )
                                 if result_response.ok:
+                                    schema_text = json.dumps(result_response.json())
+                                    max_schema = USER_CONFIG.get("max_schema_bytes", MAX_SCHEMA_BYTES)
+                                    is_over, warning = _check_schema_size(schema_text, max_schema)
+                                    if is_over:
+                                        _log_audit(name, arguments, len(schema_text))
+                                        return [TextContent(type="text", text=warning)]
                                     anonymized_data = _anonymize_json(result_response.json())
                                     _save_mapping()
-                                    return [TextContent(type="text", text=json.dumps(anonymized_data, indent=2))]
+                                    _log_audit(name, arguments, 0)
+                                    return [TextContent(type="text", text=_format_data_result(anonymized_data, "get_schema"))]
                             elif data.get("status") == "Failed":
                                 return [TextContent(type="text", text=f"Failed: {data.get('error')}")]
                     return [TextContent(type="text", text="Timeout waiting for schema")]
 
             response.raise_for_status()
+            schema_text = json.dumps(response.json())
+            max_schema = USER_CONFIG.get("max_schema_bytes", MAX_SCHEMA_BYTES)
+            is_over, warning = _check_schema_size(schema_text, max_schema)
+            if is_over:
+                _log_audit(name, arguments, len(schema_text))
+                return [TextContent(type="text", text=warning)]
             anonymized_data = _anonymize_json(response.json())
             _save_mapping()
-            return [TextContent(type="text", text=json.dumps(anonymized_data, indent=2))]
+            _log_audit(name, arguments, 0)
+            return [TextContent(type="text", text=_format_data_result(anonymized_data, "get_schema"))]
 
         elif name == "list_fabric_items":
+            rate_error = _check_rate_limit()
+            if rate_error:
+                return rate_error
             args = resolve_ids(arguments, need_workspace=True, need_dataset=False)
             workspace_id = args.get("workspace_id")
             if not workspace_id:
@@ -440,9 +576,13 @@ async def call_tool(name: str, arguments: dict):
             for item in items:
                 output += f"- {item.get('displayName')} ({item.get('type')})\n  ID: {item.get('id')}\n\n"
             _save_mapping()
-            return [TextContent(type="text", text=_anonymize_text(output))]
+            _log_audit(name, arguments, len(items))
+            return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_fabric_items"))]
 
         elif name == "search_schema":
+            rate_error = _check_rate_limit()
+            if rate_error:
+                return rate_error
             args = resolve_ids(arguments)
             workspace_id = args.get("workspace_id")
             dataset_id = args.get("dataset_id")
@@ -489,9 +629,13 @@ async def call_tool(name: str, arguments: dict):
                 output += f"... and {len(matches) - 10} more results (refine your search term for more specific results)"
 
             _save_mapping()
-            return [TextContent(type="text", text=_anonymize_text(output))]
+            _log_audit(name, arguments, len(matches))
+            return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "search_schema"))]
 
         elif name == "list_measures":
+            rate_error = _check_rate_limit()
+            if rate_error:
+                return rate_error
             args = resolve_ids(arguments)
             workspace_id = args.get("workspace_id")
             dataset_id = args.get("dataset_id")
@@ -515,21 +659,33 @@ async def call_tool(name: str, arguments: dict):
                 output += f"- {m}\n"
 
             _save_mapping()
-            return [TextContent(type="text", text=_anonymize_text(output))]
+            _log_audit(name, arguments, len(measures))
+            return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_measures"))]
 
         elif name == "anonymization_status":
             anon = _init_anonymizer()
-            stats = anon.get_stats()
-            mapping = anon.get_full_mapping()
-            session_id = _mapping_store._session_id if _mapping_store else "N/A"
+            rl = _init_rate_limiter()
+            audit = _init_audit()
+            status = _build_health_status(
+                anon_stats=anon.get_stats(),
+                anon_enabled=anon._enabled,
+                session_id=_mapping_store._session_id if _mapping_store else "N/A",
+                rate_limiter_status=rl.status(),
+                audit_status=audit.status(),
+            )
             output = "Anonymization Status\n"
-            output += f"  Enabled: {anon._enabled}\n"
-            output += f"  Session: {session_id}\n"
-            output += f"  Entities mapped: {stats.get('registry_entities', 0)}\n"
-            output += f"  Presidio detections: {stats.get('presidio_detections', 0)}\n"
-            if anon._registry.is_degraded:
+            output += f"  Enabled: {status['enabled']}\n"
+            output += f"  Session: {status['session_id']}\n"
+            output += f"  Entities mapped: {status['registry_entities']}\n"
+            output += f"  Presidio detections: {status['presidio_detections']}\n"
+            output += f"  Presidio version: {status['presidio_version']}\n"
+            output += f"  spaCy model: {status['spacy_model']}\n"
+            output += f"  Dutch name detection: {status['dutch_name_detection']}\n"
+            output += f"  Rate limiter: {status['rate_limiter']['remaining']} calls remaining\n"
+            output += f"  Audit log: {status['audit_log']['log_files']} files\n"
+            if status['is_degraded']:
                 output += "  WARNING: Registry in degraded mode (some columns failed to load)\n"
-                for w in anon._registry.get_warnings():
+                for w in status['warnings']:
                     output += f"    - {w}\n"
             return [TextContent(type="text", text=output)]
 

@@ -1,12 +1,17 @@
-"""Two-pass anonymizer: deterministic registry + Presidio safety net.
+"""Four-pass anonymizer: deterministic registry + Presidio + Dutch names + financial noise.
 
 Pass 1: Replace known entities from the EntityRegistry (fast, deterministic).
 Pass 2: Run Presidio NLP on remaining text to catch unexpected PII.
+Pass 3: Dutch name regex detection (tussenvoegsels).
+Pass 4: Financial noise (optional, HMAC-based deterministic noise).
 
 The mapping is accumulated across all tool calls in a session.
 """
 
+import hmac
+import os
 import re
+import struct
 from typing import Optional
 
 from server.entity_registry import EntityRegistry
@@ -19,6 +24,11 @@ _PRESIDIO_ALLOWLIST = {
     "july", "august", "september", "october", "november", "december",
     # English days
     "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    # Dutch months
+    "januari", "februari", "maart", "april", "mei", "juni",
+    "juli", "augustus", "september", "oktober", "november", "december",
+    # Dutch days
+    "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag",
     # English priority/status names
     "critical", "high", "medium", "low", "urgent", "normal",
     "open", "closed", "complete", "pending", "resolved", "escalated",
@@ -29,7 +39,29 @@ _PRESIDIO_ALLOWLIST = {
     # Common business terms Presidio misflags
     "ticket", "contract", "project", "service", "support",
     "backup", "patch", "alert", "device", "endpoint",
+    "client", "resource", "server", "completed", "cancelled",
+    "none",
 }
+
+
+# Dutch tussenvoegsels for regex
+_DUTCH_NAME_PATTERNS = [
+    # "Pieter van den Berg", "Maria van de Pol", "Jan van het Veld"
+    re.compile(
+        r"\b[A-Z][a-z]+ (?:van (?:de[rn]?|het)|de|den|het|op de|in 't|van 't|ter|ten) [A-Z][a-z]+(?:-[A-Z][a-z]+)?\b"
+    ),
+    # "Jan-Willem de Groot"
+    re.compile(
+        r"\b[A-Z][a-z]+-[A-Z][a-z]+ (?:van (?:de[rn]?|het)|de|den|het|op de|in 't|van 't|ter|ten) [A-Z][a-z]+\b"
+    ),
+    # "P. van den Berg"
+    re.compile(
+        r"\b[A-Z]\.\s?(?:van (?:de[rn]?|het)|de|den|het|op de|in 't|van 't|ter|ten) [A-Z][a-z]+\b"
+    ),
+]
+
+
+_CURRENCY_PATTERN = re.compile(r"([€$])\s?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?)")
 
 
 class Anonymizer:
@@ -38,6 +70,8 @@ class Anonymizer:
         registry: EntityRegistry,
         presidio_enabled: bool = True,
         enabled: bool = True,
+        anonymize_financials: bool = False,
+        financial_noise_pct: int = 10,
     ):
         self._registry = registry
         self._presidio_enabled = presidio_enabled
@@ -46,6 +80,9 @@ class Anonymizer:
         self._presidio_counter: dict[str, int] = {}    # entity_type -> counter
         self._analyzer = None
         self._anonymizer_engine = None
+        self._anonymize_financials = anonymize_financials
+        self._financial_noise_pct = financial_noise_pct
+        self._session_key = os.urandom(32)
 
     # ------------------------------------------------------------------
     # Presidio lazy loading
@@ -60,7 +97,7 @@ class Anonymizer:
 
             provider = NlpEngineProvider(nlp_configuration={
                 "nlp_engine_name": "spacy",
-                "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
+                "models": [{"lang_code": "en", "model_name": "en_core_web_lg"}],
             })
             nlp_engine = provider.create_engine()
             self._analyzer = AnalyzerEngine(nlp_engine=nlp_engine)
@@ -72,7 +109,7 @@ class Anonymizer:
     # ------------------------------------------------------------------
 
     def anonymize_text(self, text: str) -> str:
-        """Two-pass anonymization on a text string."""
+        """Three-pass anonymization on a text string."""
         if not self._enabled or not text or not isinstance(text, str):
             return text
 
@@ -82,6 +119,12 @@ class Anonymizer:
         # Pass 2: Presidio NLP safety net
         if self._presidio_enabled:
             result = self._presidio_pass(result)
+
+        # Pass 3: Dutch name regex
+        result = self._dutch_name_pass(result)
+
+        # Pass 4: Financial noise (if enabled)
+        result = self._financial_pass(result)
 
         return result
 
@@ -119,7 +162,9 @@ class Anonymizer:
         """Run Presidio NER and replace detections with indexed tokens."""
         try:
             analyzer, _ = self._get_presidio()
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Presidio runtime error: %s", e)
             return text
 
         results = analyzer.analyze(text=text, language="en", score_threshold=0.7)
@@ -154,6 +199,53 @@ class Anonymizer:
             text = text[:detection.start] + alias + text[detection.end:]
 
         return text
+
+    def _dutch_name_pass(self, text: str) -> str:
+        """Detect and anonymize Dutch compound names with tussenvoegsels."""
+        for pattern in _DUTCH_NAME_PATTERNS:
+            for match in pattern.finditer(text):
+                name = match.group()
+                if name.lower() in _PRESIDIO_ALLOWLIST:
+                    continue
+                if self._is_already_aliased(name):
+                    continue
+                alias = self._find_existing_presidio_alias(name)
+                if alias is None:
+                    idx = len(self._presidio_mapping) + 1
+                    alias = f"<DUTCH_NAME_{idx}>"
+                    self._presidio_mapping[alias] = name
+                text = text.replace(name, alias)
+        return text
+
+    def _financial_pass(self, text: str) -> str:
+        """Apply deterministic noise to currency amounts. US/invariant format only."""
+        if not self._anonymize_financials:
+            return text
+
+        def _noise_amount(match):
+            symbol = match.group(1)
+            raw = match.group(2)
+            parts = raw.split(".")
+            integer_str = parts[0].replace(",", "")
+            if not integer_str.isdigit():
+                return match.group(0)
+
+            cents_str = parts[1] if len(parts) > 1 else None
+            value_cents = int(integer_str) * 100 + (int(cents_str) if cents_str else 0)
+
+            h = hmac.new(self._session_key, str(value_cents).encode(), "sha256").digest()
+            noise_factor = struct.unpack(">H", h[:2])[0] / 65535
+            noise_range = self._financial_noise_pct / 100
+            noise_multiplier = 1 + (noise_factor * 2 - 1) * noise_range
+
+            noised_cents = int(value_cents * noise_multiplier)
+            if cents_str is not None:
+                noised_str = f"{noised_cents // 100:,}.{noised_cents % 100:02d}"
+            else:
+                noised_str = f"{noised_cents // 100:,}"
+            return f"{symbol}{noised_str}"
+
+        return _CURRENCY_PATTERN.sub(_noise_amount, text)
 
     def _is_already_aliased(self, text: str) -> bool:
         """Check if text looks like an alias produced by Pass 1."""
