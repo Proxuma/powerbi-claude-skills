@@ -15,13 +15,13 @@ Follow this **memory-safe strategy** to answer the question. NEVER use `get_sche
 If you don't already know the user's workspace and dataset IDs, find them:
 
 ```
-mcp__powerbi__list_workspaces()
+list_workspaces()
 ```
 
 Then for the relevant workspace:
 
 ```
-mcp__powerbi__list_datasets(workspace_id="<WORKSPACE_ID>")
+list_datasets(workspace_id="<WORKSPACE_ID>")
 ```
 
 If there are multiple workspaces or datasets, ask the user which one to use. Remember the IDs for subsequent queries.
@@ -35,7 +35,7 @@ Extract 2-3 key business terms from the question (e.g., "revenue", "sales", "eff
 For each keyword, use `search_schema` to find relevant measures and their definitions:
 
 ```
-mcp__powerbi__search_schema(
+search_schema(
     workspace_id="<WORKSPACE_ID>",
     dataset_id="<DATASET_ID>",
     search_term="<keyword>"
@@ -49,7 +49,7 @@ This returns only matching definitions with context (not the full schema).
 Based on the measures found, construct a targeted DAX query:
 
 ```
-mcp__powerbi__execute_dax(
+execute_dax(
     dataset_id="<DATASET_ID>",
     dax_query="EVALUATE SUMMARIZECOLUMNS(...)"
 )
