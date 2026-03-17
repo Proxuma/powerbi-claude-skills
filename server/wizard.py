@@ -273,6 +273,23 @@ def main():
     )
     args = parser.parse_args()
 
+    # Check Presidio is available
+    try:
+        import presidio_analyzer  # noqa: F401
+        import spacy
+        spacy.load("en_core_web_lg")
+    except ImportError:
+        print(f"\n{RED}[FAIL]{NC} Presidio is required but not installed.")
+        print("  Run: pip install presidio-analyzer presidio-anonymizer spacy")
+        print("  Then: python -m spacy download en_core_web_lg")
+        print("  (Note: en_core_web_lg is ~560MB)")
+        return
+    except OSError:
+        print(f"\n{RED}[FAIL]{NC} spaCy model 'en_core_web_lg' not found.")
+        print("  Run: python -m spacy download en_core_web_lg")
+        print("  (Note: en_core_web_lg is ~560MB)")
+        return
+
     print(f"\n{BOLD}  Power BI MCP — Setup Wizard{NC}")
     print(f"  ============================\n")
 
