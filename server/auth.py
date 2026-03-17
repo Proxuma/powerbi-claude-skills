@@ -5,6 +5,7 @@ Used by both server.py (MCP server) and wizard.py (setup wizard).
 """
 
 import json
+import os
 import time
 from pathlib import Path
 from azure.identity import (
@@ -40,9 +41,13 @@ def get_credential(device_code: bool = False):
     if _credential is not None:
         return _credential
 
+    # Default to encrypted storage. Set POWERBI_MCP_ALLOW_UNENCRYPTED=1
+    # if your OS doesn't support encrypted credential storage (e.g., some
+    # Linux distros without a keyring, or headless Docker containers).
+    allow_unencrypted = os.environ.get("POWERBI_MCP_ALLOW_UNENCRYPTED", "0") == "1"
     cache_options = TokenCachePersistenceOptions(
         name="powerbi-mcp",
-        allow_unencrypted_storage=True
+        allow_unencrypted_storage=allow_unencrypted
     )
 
     # Check for existing auth record
