@@ -402,9 +402,29 @@ async def call_tool(name: str, arguments: dict):
                 }
             )
             response.raise_for_status()
-            anonymized_data = _anonymize_json(response.json())
+            result = response.json()
+
+            # M2: Truncate rows if over limit
+            max_dax_rows = USER_CONFIG.get("max_dax_rows", MAX_DAX_ROWS)
+            rows = result.get("results", [{}])[0].get("tables", [{}])[0].get("rows", [])
+            truncated_rows, original_count = _truncate_dax_rows(rows, max_dax_rows)
+            if original_count > max_dax_rows:
+                result["results"][0]["tables"][0]["rows"] = truncated_rows
+
+            anonymized_data = _anonymize_json(result)
             _save_mapping()
-            return [TextContent(type="text", text=_format_data_result(anonymized_data, "execute_dax"))]
+
+            contents = []
+            if original_count > max_dax_rows:
+                contents.append(TextContent(
+                    type="text",
+                    text=f"WARNING: Result truncated from {original_count} to {max_dax_rows} rows. Add TOPN() or WHERE filters to your query.",
+                ))
+            contents.append(TextContent(
+                type="text",
+                text=_format_data_result(anonymized_data, "execute_dax"),
+            ))
+            return contents
 
         elif name == "get_schema":
             args = resolve_ids(arguments)

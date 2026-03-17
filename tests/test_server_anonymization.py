@@ -79,3 +79,26 @@ def test_format_data_result_string_data():
     result = _format_data_result("table 'Sales' { column Amount }", "get_schema")
     assert '<data_result source="get_schema">' in result
     assert "table 'Sales'" in result
+
+
+def test_dax_result_truncation_constant():
+    from server.utils import MAX_DAX_ROWS
+    assert MAX_DAX_ROWS == 5000
+
+
+def test_truncate_dax_rows():
+    from server.utils import _truncate_dax_rows
+    rows = [{"id": i} for i in range(100)]
+    truncated, original_count = _truncate_dax_rows(rows, max_rows=10)
+    assert len(truncated) == 10
+    assert original_count == 100
+    assert truncated[0]["id"] == 0
+    assert truncated[9]["id"] == 9
+
+
+def test_truncate_dax_rows_under_limit():
+    from server.utils import _truncate_dax_rows
+    rows = [{"id": i} for i in range(5)]
+    truncated, original_count = _truncate_dax_rows(rows, max_rows=10)
+    assert len(truncated) == 5
+    assert original_count == 5
