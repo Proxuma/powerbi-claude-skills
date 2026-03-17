@@ -80,3 +80,57 @@ def test_anonymizer_disabled():
     text = "Acme Corp data"
     result = anon.anonymize_text(text)
     assert result == text
+
+
+@pytest.mark.skipif(not HAS_PRESIDIO, reason="presidio not installed")
+def test_presidio_does_not_anonymize_month_names():
+    registry = _make_registry({})
+    anon = Anonymizer(registry=registry, presidio_enabled=True)
+    months = ["January", "February", "March", "April", "May", "June",
+              "July", "August", "September", "October", "November", "December"]
+    for month in months:
+        result = anon.anonymize_text(f"Tickets created in {month} 2026")
+        assert month in result, f"{month} was incorrectly anonymized to: {result}"
+
+
+@pytest.mark.skipif(not HAS_PRESIDIO, reason="presidio not installed")
+def test_presidio_does_not_anonymize_priority_names():
+    registry = _make_registry({})
+    anon = Anonymizer(registry=registry, presidio_enabled=True)
+    priorities = ["Critical", "High", "Medium", "Low", "Kritiek", "Hoog", "Gemiddeld", "Laag"]
+    for priority in priorities:
+        result = anon.anonymize_text(f"Priority: {priority}")
+        assert priority in result, f"{priority} was incorrectly anonymized to: {result}"
+
+
+@pytest.mark.skipif(not HAS_PRESIDIO, reason="presidio not installed")
+def test_presidio_does_not_anonymize_day_names():
+    registry = _make_registry({})
+    anon = Anonymizer(registry=registry, presidio_enabled=True)
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    for day in days:
+        result = anon.anonymize_text(f"Created on {day}")
+        assert day in result, f"{day} was incorrectly anonymized to: {result}"
+
+
+@pytest.mark.skipif(not HAS_PRESIDIO, reason="presidio not installed")
+def test_presidio_still_catches_real_pii():
+    """Ensure the allowlist doesn't break real PII detection."""
+    registry = _make_registry({})
+    anon = Anonymizer(registry=registry, presidio_enabled=True)
+    result = anon.anonymize_text("Email john.smith@company.com about the March report")
+    assert "john.smith@company.com" not in result
+    assert "March" in result
+
+
+@pytest.mark.skipif(not HAS_PRESIDIO, reason="presidio not installed")
+def test_presidio_still_catches_standalone_person_name():
+    """Person names without email context should still be caught.
+
+    If this fails at threshold 0.7, lower to 0.6 and add more allowlist
+    entries instead. Presidio scores person names 0.5-0.85 depending on context.
+    """
+    registry = _make_registry({})
+    anon = Anonymizer(registry=registry, presidio_enabled=True)
+    result = anon.anonymize_text("The ticket was assigned to John Smith for resolution")
+    assert "John Smith" not in result

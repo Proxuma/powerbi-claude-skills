@@ -11,6 +11,26 @@ from typing import Optional
 
 from server.entity_registry import EntityRegistry
 
+# Non-PII values that Presidio incorrectly flags.
+# Months, days, priority levels (EN + NL), status names, common business terms.
+_PRESIDIO_ALLOWLIST = {
+    # English months
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+    # English days
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    # English priority/status names
+    "critical", "high", "medium", "low", "urgent", "normal",
+    "open", "closed", "complete", "pending", "resolved", "escalated",
+    "new", "active", "inactive", "waiting", "scheduled",
+    # Dutch priority/status names
+    "kritiek", "hoog", "gemiddeld", "laag", "dringend", "normaal",
+    "nieuw", "gesloten", "voltooid", "wachtend", "opgelost",
+    # Common business terms Presidio misflags
+    "ticket", "contract", "project", "service", "support",
+    "backup", "patch", "alert", "device", "endpoint",
+}
+
 
 class Anonymizer:
     def __init__(
@@ -102,7 +122,7 @@ class Anonymizer:
         except Exception:
             return text
 
-        results = analyzer.analyze(text=text, language="en", score_threshold=0.4)
+        results = analyzer.analyze(text=text, language="en", score_threshold=0.7)
         if not results:
             return text
 
@@ -114,6 +134,10 @@ class Anonymizer:
 
             # Skip values already replaced by Pass 1
             if self._is_already_aliased(original):
+                continue
+
+            # Skip known non-PII values (months, priorities, etc.)
+            if original.strip().lower() in _PRESIDIO_ALLOWLIST:
                 continue
 
             # Reuse existing alias for the same detected value
