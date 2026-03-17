@@ -317,6 +317,17 @@ async def call_tool(name: str, arguments: dict):
             response.raise_for_status()
             data = response.json()
             workspaces = data.get("value", [])
+
+            # Register workspace names for anonymization
+            anon = _init_anonymizer()
+            if anon._enabled:
+                for i, ws in enumerate(workspaces):
+                    ws_name = ws.get("name", "")
+                    if ws_name:
+                        anon._registry.register_dynamic(
+                            ws_name, "workspace", i
+                        )
+
             output = "Available workspaces:\n\n"
             for ws in workspaces:
                 output += f"- {ws.get('name', 'Unknown')}\n  ID: {ws.get('id')}\n\n"
@@ -335,6 +346,22 @@ async def call_tool(name: str, arguments: dict):
             response.raise_for_status()
             data = response.json()
             datasets = data.get("value", [])
+
+            # Register dataset names and configuredBy for anonymization
+            anon = _init_anonymizer()
+            if anon._enabled:
+                for i, ds in enumerate(datasets):
+                    ds_name = ds.get("name", "")
+                    if ds_name:
+                        anon._registry.register_dynamic(
+                            ds_name, "dataset", i
+                        )
+                    configured_by = ds.get("configuredBy", "")
+                    if configured_by:
+                        anon._registry.register_dynamic(
+                            configured_by, "contact", None
+                        )
+
             output = "Datasets in workspace:\n\n"
             for ds in datasets:
                 output += f"- {ds.get('name', 'Unknown')}\n  ID: {ds.get('id')}\n  Configured by: {ds.get('configuredBy', 'Unknown')}\n\n"
@@ -496,7 +523,7 @@ async def call_tool(name: str, arguments: dict):
             mapping = anon.get_full_mapping()
             session_id = _mapping_store.session_id if _mapping_store else "N/A"
             output = "Anonymization Status\n"
-            output += f"  Enabled: {anon.enabled}\n"
+            output += f"  Enabled: {anon._enabled}\n"
             output += f"  Session: {session_id}\n"
             output += f"  Entities mapped: {len(mapping.get('registry', {}))}\n"
             output += f"  Presidio detections: {len(mapping.get('presidio', {}))}\n"

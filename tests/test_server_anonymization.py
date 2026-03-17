@@ -1,0 +1,56 @@
+"""Tests for server-level output anonymization."""
+from server.anonymizer import Anonymizer
+from server.entity_registry import EntityRegistry
+
+
+def _make_anonymizer(mapping: dict[str, str]) -> Anonymizer:
+    registry = EntityRegistry(sensitive_columns={}, dax_executor=lambda q: {})
+    for real_val, alias in mapping.items():
+        norm = real_val.strip().lower()
+        registry._forward[norm] = alias
+        registry._reverse[alias] = real_val
+    registry._sorted_entities = sorted(
+        [(n, registry._reverse[a]) for n, a in registry._forward.items()],
+        key=lambda x: len(x[1]),
+        reverse=True,
+    )
+    return Anonymizer(registry=registry, presidio_enabled=False)
+
+
+def test_workspace_names_should_be_anonymizable():
+    """Workspace names containing company names should be anonymized."""
+    anon = _make_anonymizer({"Contoso": "Client_A"})
+    output = "Available workspaces:\n\n- Contoso Production BI\n  ID: abc-123\n\n"
+    result = anon.anonymize_text(output)
+    assert "Contoso" not in result
+    assert "Client_A" in result
+    assert "abc-123" in result  # IDs should NOT be anonymized
+
+
+def test_dataset_configured_by_anonymized():
+    """The 'configuredBy' field often contains a person's email/name."""
+    anon = _make_anonymizer({"jan.devries@company.com": "Resource_1"})
+    output = "- My Dataset\n  ID: xyz-789\n  Configured by: jan.devries@company.com\n\n"
+    result = anon.anonymize_text(output)
+    assert "jan.devries@company.com" not in result
+
+
+def test_register_dynamic_workspace():
+    """Dynamic registration should anonymize workspace names."""
+    registry = EntityRegistry(sensitive_columns={}, dax_executor=lambda q: {})
+    registry.register_dynamic("Contoso Production BI", "workspace", 0)
+    anon = Anonymizer(registry=registry, presidio_enabled=False)
+    output = "- Contoso Production BI\n  ID: abc-123"
+    result = anon.anonymize_text(output)
+    assert "Contoso Production BI" not in result
+    assert "Workspace_1" in result
+    assert "abc-123" in result
+
+
+def test_register_dynamic_auto_index():
+    """Auto-index should pick the next available index."""
+    registry = EntityRegistry(sensitive_columns={}, dax_executor=lambda q: {})
+    registry.register_dynamic("jan@company.com", "contact")
+    registry.register_dynamic("piet@company.com", "contact")
+    assert "Contact_1" in registry._reverse
+    assert "Contact_2" in registry._reverse

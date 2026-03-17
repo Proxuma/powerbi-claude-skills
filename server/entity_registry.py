@@ -117,6 +117,36 @@ class EntityRegistry:
         """Return alias -> real_value mapping."""
         return dict(self._reverse)
 
+    def register_dynamic(self, value: str, category: str, index: int = None):
+        """Register a value for anonymization at runtime (not from DAX columns).
+
+        Used for workspace names, dataset names, and other values discovered
+        during tool execution that aren't in the pre-loaded sensitive columns.
+        """
+        norm = _normalize(value)
+        if norm in self._forward:
+            return  # Already registered
+
+        if index is None:
+            # Auto-increment: find the next available index for this category
+            index = 0
+            while True:
+                alias = _default_alias(category, index)
+                if alias not in self._reverse:
+                    break
+                index += 1
+
+        alias = _default_alias(category, index)
+        self._forward[norm] = alias
+        self._reverse[alias] = value
+
+        # Rebuild sorted entities for longest-match-first
+        self._sorted_entities = sorted(
+            [(n, self._reverse[a]) for n, a in self._forward.items()],
+            key=lambda x: len(x[1]),
+            reverse=True,
+        )
+
     def get_warnings(self) -> list[str]:
         """Return list of warnings encountered during initialization."""
         return list(self._warnings)
