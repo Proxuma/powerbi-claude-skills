@@ -37,6 +37,8 @@ from server.entity_registry import EntityRegistry
 from server.anonymizer import Anonymizer
 from server.mapping import MappingStore
 from server.utils import _format_data_result, MAX_DAX_ROWS, MAX_SCHEMA_BYTES, _truncate_dax_rows, _check_schema_size
+from server.rate_limiter import RateLimiter
+from server.audit import AuditLogger
 
 # User config — env vars > local config.json > ~/.powerbi-mcp/config.json
 CONFIG_PATH = Path(__file__).parent / "config.json"
@@ -146,6 +148,41 @@ def _init_anonymizer():
 
     _anon_initialized = True
     return _anonymizer_instance
+
+
+_rate_limiter: RateLimiter | None = None
+_audit: AuditLogger | None = None
+
+
+def _init_rate_limiter():
+    global _rate_limiter
+    if _rate_limiter is None:
+        rl_config = USER_CONFIG.get("rate_limit", {})
+        _rate_limiter = RateLimiter(
+            max_calls=rl_config.get("max_calls", 50),
+            window_seconds=rl_config.get("window_seconds", 300),
+        )
+    return _rate_limiter
+
+
+def _init_audit():
+    global _audit
+    if _audit is None:
+        log_dir = Path.home() / ".powerbi-mcp" / "audit"
+        session_id = _mapping_store._session_id if _mapping_store else "unknown"
+        _audit = AuditLogger(log_dir=log_dir, session_id=session_id)
+    return _audit
+
+
+def _log_audit(tool_name: str, arguments: dict, result_size: int = 0):
+    """Log a tool call to the audit trail."""
+    audit = _init_audit()
+    audit.log_tool_call(
+        tool_name=tool_name,
+        params=arguments,
+        result_size=result_size,
+        anonymization_stats=_anonymizer_instance.get_stats() if _anonymizer_instance else {},
+    )
 
 
 def _anonymize_text(text: str) -> str:
@@ -351,6 +388,7 @@ async def call_tool(name: str, arguments: dict):
             for ws in workspaces:
                 output += f"- {ws.get('name', 'Unknown')}\n  ID: {ws.get('id')}\n\n"
             _save_mapping()
+            _log_audit(name, arguments, len(workspaces))
             return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_workspaces"))]
 
         elif name == "list_datasets":
@@ -385,9 +423,20 @@ async def call_tool(name: str, arguments: dict):
             for ds in datasets:
                 output += f"- {ds.get('name', 'Unknown')}\n  ID: {ds.get('id')}\n  Configured by: {ds.get('configuredBy', 'Unknown')}\n\n"
             _save_mapping()
+            _log_audit(name, arguments, len(datasets))
             return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_datasets"))]
 
         elif name == "execute_dax":
+            rl = _init_rate_limiter()
+            allowed, wait = rl.check()
+            if not allowed:
+                return [
+                    TextContent(
+                        type="text",
+                        text=f"Rate limit exceeded. {wait} seconds until next call is available. "
+                        f"Status: {rl.remaining()} of {rl._max_calls} calls remaining.",
+                    )
+                ]
             args = resolve_ids(arguments, need_workspace=False, need_dataset=True)
             dataset_id = args.get("dataset_id")
             if not dataset_id:
@@ -424,9 +473,20 @@ async def call_tool(name: str, arguments: dict):
                 type="text",
                 text=_format_data_result(anonymized_data, "execute_dax"),
             ))
+            _log_audit(name, arguments, len(truncated_rows))
             return contents
 
         elif name == "get_schema":
+            rl = _init_rate_limiter()
+            allowed, wait = rl.check()
+            if not allowed:
+                return [
+                    TextContent(
+                        type="text",
+                        text=f"Rate limit exceeded. {wait} seconds until next call is available. "
+                        f"Status: {rl.remaining()} of {rl._max_calls} calls remaining.",
+                    )
+                ]
             args = resolve_ids(arguments)
             workspace_id = args.get("workspace_id")
             dataset_id = args.get("dataset_id")
@@ -454,6 +514,7 @@ async def call_tool(name: str, arguments: dict):
                                 if result_response.ok:
                                     anonymized_data = _anonymize_json(result_response.json())
                                     _save_mapping()
+                                    _log_audit(name, arguments, 0)
                                     return [TextContent(type="text", text=_format_data_result(anonymized_data, "get_schema"))]
                             elif data.get("status") == "Failed":
                                 return [TextContent(type="text", text=f"Failed: {data.get('error')}")]
@@ -462,6 +523,7 @@ async def call_tool(name: str, arguments: dict):
             response.raise_for_status()
             anonymized_data = _anonymize_json(response.json())
             _save_mapping()
+            _log_audit(name, arguments, 0)
             return [TextContent(type="text", text=_format_data_result(anonymized_data, "get_schema"))]
 
         elif name == "list_fabric_items":
@@ -479,9 +541,20 @@ async def call_tool(name: str, arguments: dict):
             for item in items:
                 output += f"- {item.get('displayName')} ({item.get('type')})\n  ID: {item.get('id')}\n\n"
             _save_mapping()
+            _log_audit(name, arguments, len(items))
             return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_fabric_items"))]
 
         elif name == "search_schema":
+            rl = _init_rate_limiter()
+            allowed, wait = rl.check()
+            if not allowed:
+                return [
+                    TextContent(
+                        type="text",
+                        text=f"Rate limit exceeded. {wait} seconds until next call is available. "
+                        f"Status: {rl.remaining()} of {rl._max_calls} calls remaining.",
+                    )
+                ]
             args = resolve_ids(arguments)
             workspace_id = args.get("workspace_id")
             dataset_id = args.get("dataset_id")
@@ -528,6 +601,7 @@ async def call_tool(name: str, arguments: dict):
                 output += f"... and {len(matches) - 10} more results (refine your search term for more specific results)"
 
             _save_mapping()
+            _log_audit(name, arguments, len(matches))
             return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "search_schema"))]
 
         elif name == "list_measures":
@@ -554,6 +628,7 @@ async def call_tool(name: str, arguments: dict):
                 output += f"- {m}\n"
 
             _save_mapping()
+            _log_audit(name, arguments, len(measures))
             return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_measures"))]
 
         elif name == "anonymization_status":
