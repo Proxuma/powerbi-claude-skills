@@ -1,8 +1,8 @@
 # Project Report Generator
 
 Generate TWO professional HTML project reports with PDF export from Power BI / Autotask PSA data:
-1. **External Report** - Customer-facing (no financial data, anonymized names)
-2. **Internal Report** - MSP internal use (full financial data, anonymized names, profitability analysis)
+1. **External Report** - Customer-facing (customer branding, no financial data, resource names anonymized)
+2. **Internal Report** - MSP internal use (MSP branding, full financial data, real names, profitability analysis)
 
 ## Usage
 The user will specify which customer/project to generate a report for: $ARGUMENTS
@@ -11,42 +11,72 @@ The user will specify which customer/project to generate a report for: $ARGUMENT
 
 ---
 
-## BRANDING: Default vs Custom
+## Setup: Customer & MSP Branding
 
-### Default Branding
-If no specific branding/style is mentioned, use a **professional MSP look** with the default color palette defined in the CSS Variables section below.
+When invoked, collect this information before generating reports:
 
-### Custom Branding Override
-When the user specifies a different company style (e.g., "in the style of Acme Corp", "use ClientX branding"), override these elements:
+### Required inputs
+1. **Customer website URL** — used to extract branding for the External report
+2. **MSP website URL** — used to extract branding for the Internal report
 
-| Element | What to Replace |
-|---------|-----------------|
-| **Logo** | Replace placeholder logo area with client's logo (SVG or image URL) |
-| **Colors** | Map client brand colors to CSS variables (see mapping table below) |
-| **Company name** | Replace throughout (footer, copyright, badge) |
-| **Website URL** | Replace with client's website |
-| **Taglines** | Replace or remove default taglines |
-| **Document prefix** | Replace `RPT-` with client's prefix |
+If the user provides these as arguments (e.g., `#projectreport Acme Corp https://acme.com https://yourmsp.com`), skip the questions.
 
-**CSS Variable Mapping for Custom Branding:**
+If not provided, ask:
+- "What is your customer's website URL? (for branding the external report)"
+- "What is your company's website URL? (for branding the internal report)"
 
-The template uses CSS custom properties so a single `:root` block controls the entire theme:
+### Optional inputs
+- **Language:** By default, detect language from each website. The user can override:
+  - "Both in English" / "Both in Dutch" / "External in German, internal in English"
+  - If not specified: External report uses customer's website language, Internal uses MSP's website language
+- **Branding overrides:** The user can provide specific colors, logo URLs, or company names instead of auto-detection
 
+### Auto-extraction workflow
+For each website URL:
+1. Fetch the homepage
+2. Extract: company name (from `<title>` or logo alt text), logo URL (from header `<img>` or favicon), primary color (from CSS/meta theme-color), secondary color, language (from `<html lang="...">` or content analysis)
+3. Map extracted colors to the CSS variable system (see Branding section below)
+
+If extraction fails for any element, fall back to the default palette and ask the user to provide the missing info.
+
+---
+
+## BRANDING
+
+### External Report
+Uses the **customer's** branding (extracted from their website URL):
+- `--navy-primary`: Customer's primary color → headers, title backgrounds
+- `--brand-blue`: Customer's secondary color → borders, accents
+- `--navy-dark`: Darker variant of customer's primary → deep backgrounds
+- `--blue-bright`: Customer's accent color → links, highlights
+- `--green-cta`: Customer's CTA color → buttons, export bar
+- Logo: Customer's logo in header
+- Company name: Customer's name in footer, copyright
+
+### Internal Report
+Uses the **MSP's** branding (extracted from their website URL):
+- Same CSS variable mapping but with MSP's colors
+- Logo: MSP's logo
+- Company name: MSP name in footer
+- Adds "INTERNAL USE ONLY" banner in red
+
+### Fallback
+If no website URLs are provided or extraction fails, use the default palette:
 ```css
 :root {
-    --navy-primary: [client primary color];     /* Headers, section labels, title bg */
-    --brand-blue: [client secondary color];     /* Borders, footer accents */
-    --navy-dark: [darker variant of primary];   /* Deep backgrounds */
-    --blue-bright: [client accent color];       /* Links, CTAs, highlights */
-    --green-cta: [client CTA color];            /* Export button, action buttons */
-    /* Keep functional colors unchanged: */
-    --green-success: #10B981;                   /* Success states */
-    --amber-warning: #F59E0B;                   /* Warning states */
-    --red-danger: #EF4444;                      /* Danger states */
+    --navy-primary: #1B365D;
+    --brand-blue: #164487;
+    --navy-dark: #0f2240;
+    --blue-bright: #60a5fa;
+    --green-cta: #00D9A5;
+    /* Functional colors (always unchanged): */
+    --green-success: #10B981;
+    --amber-warning: #F59E0B;
+    --red-danger: #EF4444;
 }
 ```
 
-For Gantt bar colors, budget bar gradients, and pill badges: use `linear-gradient(135deg, primary, secondary)` with the client's palette. Semantic colors (green for success, amber for warning, red for danger) stay unchanged.
+For Gantt bar colors, budget bar gradients, and pill badges: use `linear-gradient(135deg, primary, secondary)` with the extracted palette. Semantic colors (green for success, amber for warning, red for danger) stay unchanged.
 
 **What stays the same regardless of branding:**
 - Overall layout structure (export bar, header, content sections, footer)
@@ -56,7 +86,27 @@ For Gantt bar colors, budget bar gradients, and pill badges: use `linear-gradien
 - Internal/External report differentiation logic
 - Gantt chart implementation
 - DAX verification section (internal only)
-- Name anonymization rules
+
+## LANGUAGE
+
+Reports can be generated in any language. The default behavior:
+
+| Report | Language source | Example |
+|--------|---------------|---------|
+| External | Customer website `<html lang>` | `lang="de"` → German report |
+| Internal | MSP website `<html lang>` | `lang="nl"` → Dutch report |
+
+### What gets translated
+- All headings and labels (e.g., "Executive Summary" → "Samenvatting")
+- Status pills (e.g., "On Track" → "Op Schema")
+- Section descriptions and narrative text
+- Date formats (e.g., "March 17, 2026" → "17 maart 2026")
+- Currency formatting (if applicable)
+
+### What stays in English
+- DAX query code blocks
+- Technical field names in the DAX verification section (internal only)
+- CSS class names and HTML structure
 
 ---
 
@@ -119,18 +169,28 @@ You MUST generate two separate HTML files for every project.
 
 ---
 
-## NAME ANONYMIZATION - MANDATORY FOR BOTH REPORTS
+## NAME HANDLING
 
-**Replace ALL person names, customer names, and project names with plausible anonymized versions.** The original names from the data MUST NOT appear anywhere in either report.
+### External Report (customer-facing)
+- **Customer/company name:** Use REAL name (this report is for them)
+- **Project name:** Use REAL name
+- **MSP resource names:** Anonymize with common American names (the customer doesn't need to know individual tech names)
+- **MSP company name:** Use REAL name (your logo is on it)
 
-### Person Names (Team Members, Project Leads, etc.)
+### Internal Report (MSP team)
+- **All names:** Use REAL names — no anonymization (this report is for internal use only)
+- **Customer name, project name, resource names:** All real
+
+### When anonymization IS appropriate
+If the user explicitly asks for demo/sample reports, or if they're generating reports for a portfolio/showcase, apply full anonymization:
+
+**Person Names (for demo mode):**
 Replace with common American first + last name combinations:
 - Michael Johnson, Sarah Williams, David Anderson, Jennifer Miller
 - Christopher Davis, Emily Wilson, Matthew Brown, Amanda Taylor
 - James Peterson, Robert Collins, William Stevens, Thomas Mitchell
 
-### Customer/Company Names
-Use realistic business name patterns based on industry:
+**Customer/Company Names (for demo mode):**
 
 | Industry | Pattern Examples |
 |----------|------------------|
@@ -142,20 +202,11 @@ Use realistic business name patterns based on industry:
 | **Healthcare** | Northside Medical Clinic, Family Health Associates |
 | **Non-Profits** | Heritage Community Foundation, Discovery Science Museum |
 
-### Project Names
-Maintain the same structure but with anonymized company names:
-- "Summit Bank QBR Q1 2025" (not the real bank name)
-- "FIELD Deployment Project - (5) Replacement Laptops"
-- "Client ONBOARDING: Keysuite (03/15/25)"
-- "Networking - Switch Replacement"
-
-### Anonymization Rules
-1. Scan ALL data fields: Project names, Customer names, Person names, Assigned To, Last Activity By
-2. Create a consistent mapping: same original name = same replacement throughout BOTH reports
-3. Keep project TYPE/STRUCTURE intact, only replace identifiable names
-4. BOTH reports use the EXACT SAME anonymized names
-5. NEVER show original names in console output or your response messages
-6. The name mapping is for internal use only, never reveal it to the user
+### Anonymization Rules (when applicable)
+1. Create a consistent mapping: same original name = same replacement throughout BOTH reports
+2. Keep project TYPE/STRUCTURE intact, only replace identifiable names
+3. BOTH reports use the EXACT SAME anonymized names
+4. NEVER show original names in console output or your response messages
 
 ---
 
@@ -193,11 +244,9 @@ Maintain the same structure but with anonymized company names:
 
 **Filename:** `INTERNAL_Project_[ProjectName]_Report.html`
 
-**IMPORTANT: Use the SAME anonymized names as the External report!**
-- Same anonymized project name in header/title
-- Same anonymized company name
-- Same anonymized person names
-- The only differences: Internal includes financial data, DAX queries, and confidential banner
+**Name handling:** Use REAL names throughout (see NAME HANDLING section). Customer name, project name, resource names — all real. This is an internal document.
+- The only differences from external: Internal includes financial data, DAX queries, real resource names, and confidential banner
+- If generating in demo mode, use the same anonymized names as the External report
 
 **Additional Sections (beyond everything in the external report):**
 
@@ -1915,7 +1964,7 @@ After generating both reports:
    - Internal report contains confidential financial data, do not share externally
    - Use Cmd+P (or Ctrl+P) and "Save as PDF" to export
 
-**Console Output Privacy:**
-- NEVER mention original names in your output messages to the user
+**Console Output Privacy (demo mode only):**
+- When generating demo/showcase reports with anonymization enabled: NEVER mention original names in your output messages
 - Do NOT show name mappings in your response
-- Only use the anonymized American names when referencing people in your summary
+- When generating real reports (default): use real names in your summary as they appear in the reports
