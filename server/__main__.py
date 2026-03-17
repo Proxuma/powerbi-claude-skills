@@ -1,8 +1,8 @@
 """CLI entry point for deanonymization.
 
 Usage:
-    python -m server.deanonymizer report.html -o report-final.html
-    python -m server.deanonymizer report.html --mapping path/to/mapping.json -o out.html
+    python -m server report.html -o report-real.html
+    python -m server report.html --mapping path/to/mapping.json -o out.html
 """
 
 import argparse

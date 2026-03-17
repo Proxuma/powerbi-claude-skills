@@ -5,11 +5,11 @@ Auto-discovers workspaces and datasets, writes config.json, and authenticates
 the user in one step. Eliminates manual GUID hunting.
 
 Usage:
-  python wizard.py                                          # Interactive
-  python wizard.py --workspace-id XXX --dataset-id YYY      # Pre-configured
-  python wizard.py --config-url https://it.acme.com/config  # Download config
-  python wizard.py --silent --workspace-id X --dataset-id Y # No prompts (MDM)
-  python wizard.py --device-code                            # Headless (SSH)
+  python -m server.wizard                                          # Interactive
+  python -m server.wizard --workspace-id XXX --dataset-id YYY      # Pre-configured
+  python -m server.wizard --config-url https://it.acme.com/config  # Download config
+  python -m server.wizard --silent --workspace-id X --dataset-id Y # No prompts (MDM)
+  python -m server.wizard --device-code                            # Headless (SSH)
 """
 
 import argparse
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import requests
 
-from auth import (
+from server.auth import (
     CACHE_DIR,
     POWERBI_SCOPE,
     get_token,
@@ -156,7 +156,7 @@ def verify_connection(device_code=False):
 
 def detect_sensitive_columns(workspace_id, dataset_id, device_code=False):
     """Scan schema for likely PII columns and suggest anonymization config."""
-    from auth import get_fabric_headers
+    from server.auth import get_fabric_headers
     import base64
     import time
 

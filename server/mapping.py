@@ -8,7 +8,7 @@ import json
 import os
 import shutil
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -41,7 +41,7 @@ class MappingStore:
             raise RuntimeError("No active session. Call new_session() first.")
         data = {
             "session_id": self._session_id,
-            "created": datetime.utcnow().isoformat() + "Z",
+            "created": datetime.now(timezone.utc).isoformat(),
             "mappings": mapping,
             "stats": stats,
         }
@@ -76,7 +76,7 @@ class MappingStore:
         """Remove sessions older than retention_days."""
         if self._retention_days < 0:
             return
-        cutoff = datetime.utcnow() - timedelta(days=self._retention_days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=self._retention_days)
         for entry in self._base_dir.iterdir():
             if entry.name == "latest" or not entry.is_dir():
                 continue
@@ -87,7 +87,8 @@ class MappingStore:
                 try:
                     with open(mapping_file) as f:
                         data = json.load(f)
-                    created = datetime.fromisoformat(data["created"].rstrip("Z"))
+                    raw = data["created"]
+                    created = datetime.fromisoformat(raw.replace("Z", "+00:00"))
                     if created < cutoff:
                         shutil.rmtree(entry)
                 except Exception:

@@ -11,7 +11,7 @@ from mcp.types import Tool, TextContent
 import requests
 
 # Shared auth module
-from auth import (
+from server.auth import (
     CACHE_DIR, get_powerbi_headers, get_fabric_headers
 )
 
@@ -521,17 +521,15 @@ async def call_tool(name: str, arguments: dict):
             anon = _init_anonymizer()
             stats = anon.get_stats()
             mapping = anon.get_full_mapping()
-            session_id = _mapping_store.session_id if _mapping_store else "N/A"
+            session_id = _mapping_store._session_id if _mapping_store else "N/A"
             output = "Anonymization Status\n"
             output += f"  Enabled: {anon._enabled}\n"
             output += f"  Session: {session_id}\n"
-            output += f"  Entities mapped: {len(mapping.get('registry', {}))}\n"
-            output += f"  Presidio detections: {len(mapping.get('presidio', {}))}\n"
-            output += f"  Pass 1 replacements: {stats.get('pass1_replacements', 0)}\n"
-            output += f"  Pass 2 replacements: {stats.get('pass2_replacements', 0)}\n"
-            if anon.registry and anon.registry.is_degraded:
-                output += "  WARNING: Registry in degraded mode (Presidio-only fallback)\n"
-                for w in anon.registry.get_warnings():
+            output += f"  Entities mapped: {stats.get('registry_entities', 0)}\n"
+            output += f"  Presidio detections: {stats.get('presidio_detections', 0)}\n"
+            if anon._registry.is_degraded:
+                output += "  WARNING: Registry in degraded mode (some columns failed to load)\n"
+                for w in anon._registry.get_warnings():
                     output += f"    - {w}\n"
             return [TextContent(type="text", text=output)]
 
