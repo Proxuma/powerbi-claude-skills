@@ -102,3 +102,24 @@ def test_truncate_dax_rows_under_limit():
     truncated, original_count = _truncate_dax_rows(rows, max_rows=10)
     assert len(truncated) == 5
     assert original_count == 5
+
+
+def test_schema_size_limit_constant():
+    from server.utils import MAX_SCHEMA_BYTES
+    assert MAX_SCHEMA_BYTES == 500_000
+
+
+def test_check_schema_size_over_limit():
+    from server.utils import _check_schema_size
+    large_text = "x" * 600_000
+    is_over, msg = _check_schema_size(large_text, max_bytes=500_000)
+    assert is_over is True
+    assert "too large" in msg
+    assert "search_schema" in msg
+
+
+def test_check_schema_size_under_limit():
+    from server.utils import _check_schema_size
+    small_text = "x" * 1000
+    is_over, msg = _check_schema_size(small_text, max_bytes=500_000)
+    assert is_over is False
