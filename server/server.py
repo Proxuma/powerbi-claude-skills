@@ -1,6 +1,7 @@
 import json
 import asyncio
 import os
+import sys
 import time
 import base64
 import re
@@ -9,6 +10,22 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 import requests
+
+# --- Presidio startup guard (M1) ---
+try:
+    from presidio_analyzer import AnalyzerEngine
+    from presidio_anonymizer import AnonymizerEngine
+    import spacy
+    spacy.load("en_core_web_lg")
+except ImportError:
+    print("ERROR: Required dependencies missing.")
+    print("Install: pip install presidio-analyzer presidio-anonymizer spacy")
+    print("Then: python -m spacy download en_core_web_lg")
+    sys.exit(1)
+except OSError:
+    print("ERROR: spaCy model 'en_core_web_lg' not found.")
+    print("Install: python -m spacy download en_core_web_lg")
+    sys.exit(1)
 
 # Shared auth module
 from server.auth import (
