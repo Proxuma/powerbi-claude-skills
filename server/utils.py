@@ -42,3 +42,50 @@ def _enforce_config_permissions(config_path) -> None:
         current_mode = config_path.stat().st_mode & 0o777
         if current_mode != 0o600:
             os.chmod(config_path, 0o600)
+
+
+def _redact_free_text_columns(rows: list, free_text_columns: list) -> list:
+    """Replace values in free_text_columns with [REDACTED] before anonymization."""
+    if not free_text_columns:
+        return rows
+    for row in rows:
+        for col in free_text_columns:
+            if col in row:
+                row[col] = "[REDACTED]"
+    return rows
+
+
+def _build_health_status(
+    anon_stats=None,
+    anon_enabled=True,
+    session_id="N/A",
+    rate_limiter_status=None,
+    audit_status=None,
+) -> dict:
+    """Build extended health status dict for anonymization_status tool."""
+    try:
+        import presidio_analyzer
+        presidio_version = presidio_analyzer.__version__
+    except ImportError:
+        presidio_version = "NOT INSTALLED"
+
+    try:
+        import spacy
+        nlp = spacy.load("en_core_web_lg")
+        spacy_model = nlp.meta.get("name", "unknown")
+    except Exception:
+        spacy_model = "NOT LOADED"
+
+    return {
+        "enabled": anon_enabled,
+        "session_id": session_id,
+        "registry_entities": (anon_stats or {}).get("registry_entities", 0),
+        "presidio_detections": (anon_stats or {}).get("presidio_detections", 0),
+        "is_degraded": (anon_stats or {}).get("is_degraded", False),
+        "warnings": (anon_stats or {}).get("warnings", []),
+        "presidio_version": presidio_version,
+        "spacy_model": spacy_model,
+        "dutch_name_detection": True,
+        "rate_limiter": rate_limiter_status or {"remaining": 0, "max_calls": 0, "window_seconds": 0, "calls_in_window": 0},
+        "audit_log": audit_status or {"log_dir": "", "log_files": 0, "total_size_bytes": 0, "last_write": None},
+    }

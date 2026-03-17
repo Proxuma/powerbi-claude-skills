@@ -123,3 +123,42 @@ def test_check_schema_size_under_limit():
     small_text = "x" * 1000
     is_over, msg = _check_schema_size(small_text, max_bytes=500_000)
     assert is_over is False
+
+
+def test_free_text_columns_redacted():
+    """N2: Columns in free_text_columns are replaced with [REDACTED] before anonymization."""
+    from server.utils import _redact_free_text_columns
+
+    rows = [
+        {"Subject": "Password reset for Jan", "Status": "Open", "Priority": "High"},
+        {"Subject": "VPN issue at Acme", "Status": "Closed", "Priority": "Low"},
+    ]
+    config_cols = ["Subject"]
+    result = _redact_free_text_columns(rows, config_cols)
+    assert result[0]["Subject"] == "[REDACTED]"
+    assert result[1]["Subject"] == "[REDACTED]"
+    assert result[0]["Status"] == "Open"
+
+
+def test_free_text_columns_empty_config():
+    """N2: Empty free_text_columns config does nothing."""
+    from server.utils import _redact_free_text_columns
+
+    rows = [{"Subject": "Test", "Status": "Open"}]
+    result = _redact_free_text_columns(rows, [])
+    assert result[0]["Subject"] == "Test"
+
+
+def test_health_check_fields():
+    """N1: Health check output includes Presidio, rate limiter, and audit info."""
+    from server.utils import _build_health_status
+    # _build_health_status needs: anonymizer stats, presidio info, rate limiter status, audit status
+    # For testing, we need a simplified version that works without full server init
+    # Actually, let's test the function exists and returns the right shape
+    # The function needs to be importable from utils
+    status = _build_health_status()
+    assert "presidio_version" in status
+    assert "spacy_model" in status
+    assert "dutch_name_detection" in status
+    assert "rate_limiter" in status
+    assert "audit_log" in status

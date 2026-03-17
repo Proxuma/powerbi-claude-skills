@@ -464,6 +464,15 @@ async def call_tool(name: str, arguments: dict):
             if original_count > max_dax_rows:
                 result["results"][0]["tables"][0]["rows"] = truncated_rows
 
+            # N2: Redact free-text columns before anonymization
+            from server.utils import _redact_free_text_columns
+            free_text_cols = USER_CONFIG.get("anonymization", {}).get("free_text_columns", [])
+            redacted_rows = _redact_free_text_columns(
+                result.get("results", [{}])[0].get("tables", [{}])[0].get("rows", []),
+                free_text_cols,
+            )
+            result["results"][0]["tables"][0]["rows"] = redacted_rows
+
             anonymized_data = _anonymize_json(result)
             _save_mapping()
 
@@ -636,18 +645,30 @@ async def call_tool(name: str, arguments: dict):
             return [TextContent(type="text", text=_format_data_result(_anonymize_text(output), "list_measures"))]
 
         elif name == "anonymization_status":
+            from server.utils import _build_health_status
             anon = _init_anonymizer()
-            stats = anon.get_stats()
-            mapping = anon.get_full_mapping()
-            session_id = _mapping_store._session_id if _mapping_store else "N/A"
+            rl = _init_rate_limiter()
+            audit = _init_audit()
+            status = _build_health_status(
+                anon_stats=anon.get_stats(),
+                anon_enabled=anon._enabled,
+                session_id=_mapping_store._session_id if _mapping_store else "N/A",
+                rate_limiter_status=rl.status(),
+                audit_status=audit.status(),
+            )
             output = "Anonymization Status\n"
-            output += f"  Enabled: {anon._enabled}\n"
-            output += f"  Session: {session_id}\n"
-            output += f"  Entities mapped: {stats.get('registry_entities', 0)}\n"
-            output += f"  Presidio detections: {stats.get('presidio_detections', 0)}\n"
-            if anon._registry.is_degraded:
+            output += f"  Enabled: {status['enabled']}\n"
+            output += f"  Session: {status['session_id']}\n"
+            output += f"  Entities mapped: {status['registry_entities']}\n"
+            output += f"  Presidio detections: {status['presidio_detections']}\n"
+            output += f"  Presidio version: {status['presidio_version']}\n"
+            output += f"  spaCy model: {status['spacy_model']}\n"
+            output += f"  Dutch name detection: {status['dutch_name_detection']}\n"
+            output += f"  Rate limiter: {status['rate_limiter']['remaining']} calls remaining\n"
+            output += f"  Audit log: {status['audit_log']['log_files']} files\n"
+            if status['is_degraded']:
                 output += "  WARNING: Registry in degraded mode (some columns failed to load)\n"
-                for w in anon._registry.get_warnings():
+                for w in status['warnings']:
                     output += f"    - {w}\n"
             return [TextContent(type="text", text=output)]
 
