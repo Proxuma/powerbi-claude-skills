@@ -51,3 +51,63 @@ def test_mapping_store_cleanup():
         store.cleanup()
         old_path = Path(tmpdir) / old_id
         assert not old_path.exists()
+
+
+def test_encrypted_save_and_load(tmp_path):
+    """S2: Encrypted mapping can be saved and loaded."""
+    os.environ["POWERBI_MCP_ENCRYPTION_KEY"] = "test-key-for-unit-tests-only-32ch"
+    try:
+        store = MappingStore(base_dir=tmp_path, encrypt=True)
+        store.new_session()
+        mapping = {"Client_A": "Acme Corp", "<PERSON_1>": "Jan de Vries"}
+        stats = {"registry_entities": 1, "presidio_detections": 1}
+        store.save(mapping, stats)
+
+        mapping_file = list(tmp_path.rglob("mapping.json.enc"))[0]
+        raw = mapping_file.read_bytes()
+        assert b"Acme Corp" not in raw
+        assert b"Jan de Vries" not in raw
+
+        loaded = store.load(store._session_id)
+        assert loaded["mappings"]["Client_A"] == "Acme Corp"
+    finally:
+        del os.environ["POWERBI_MCP_ENCRYPTION_KEY"]
+
+
+def test_encrypted_wrong_key_starts_fresh(tmp_path):
+    """S2: Wrong key logs error and starts fresh session."""
+    os.environ["POWERBI_MCP_ENCRYPTION_KEY"] = "original-key-32-chars-long-here"
+    try:
+        store = MappingStore(base_dir=tmp_path, encrypt=True)
+        store.new_session()
+        store.save({"Client_A": "Acme Corp"}, {})
+        session_id = store._session_id
+    finally:
+        del os.environ["POWERBI_MCP_ENCRYPTION_KEY"]
+
+    os.environ["POWERBI_MCP_ENCRYPTION_KEY"] = "different-key-32-chars-long-now"
+    try:
+        store2 = MappingStore(base_dir=tmp_path, encrypt=True)
+        loaded = store2.load(session_id)
+        assert loaded is None
+    finally:
+        del os.environ["POWERBI_MCP_ENCRYPTION_KEY"]
+
+
+def test_plaintext_still_loads_when_encryption_off(tmp_path):
+    """S2: Existing plaintext files still load when encrypt=False."""
+    store = MappingStore(base_dir=tmp_path, encrypt=False)
+    store.new_session()
+    store.save({"Client_A": "Acme Corp"}, {})
+    loaded = store.load(store._session_id)
+    assert loaded["mappings"]["Client_A"] == "Acme Corp"
+
+
+def test_config_chmod(tmp_path):
+    """S5: Config files get 0600 permissions."""
+    from server.utils import _enforce_config_permissions
+    config_file = tmp_path / "config.json"
+    config_file.write_text('{"test": true}')
+    os.chmod(config_file, 0o644)
+    _enforce_config_permissions(config_file)
+    assert oct(config_file.stat().st_mode & 0o777) == oct(0o600)

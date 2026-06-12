@@ -1,20 +1,26 @@
 {
-  "default_workspace_id": "",
-  "default_workspace_name": "",
-  "default_dataset_id": "",
-  "default_dataset_name": "",
-  "workspaces": {},
-  "datasets": {},
-  "anonymization": {
-    "enabled": true,
-    "sensitive_columns": {
-      "client": [],
-      "resource": [],
-      "contact": []
+    "default_workspace_id": "",
+    "default_workspace_name": "",
+    "default_dataset_id": "",
+    "default_dataset_name": "",
+    "max_dax_rows": 5000,
+    "max_schema_bytes": 500000,
+    "rate_limit": {
+        "max_calls": 50,
+        "window_seconds": 300
     },
-    "free_text_columns": [],
-    "presidio_enabled": true,
-    "session_retention_days": 90,
-    "encrypt_mappings": false
-  }
+    "anonymization": {
+        "enabled": true,
+        "sensitive_columns": {
+            "client": [],
+            "resource": [],
+            "contact": []
+        },
+        "free_text_columns": [],
+        "presidio_enabled": true,
+        "session_retention_days": 90,
+        "encrypt_mappings": false,
+        "anonymize_financials": false,
+        "financial_noise_percentage": 10
+    }
 }

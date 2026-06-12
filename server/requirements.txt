@@ -5,11 +5,14 @@ mcp
 azure-identity
 requests
 
-# Presidio for PII anonymization
+# Presidio for PII anonymization (REQUIRED)
 presidio-analyzer
 presidio-anonymizer
 
 # Required for Presidio NLP engine
-spacy>=3.0.0
+spacy>=3.5.0
+# Run after install: python -m spacy download en_core_web_lg
 
-# Run after install: python -m spacy download en_core_web_sm
+# Mapping encryption
+cryptography
+keyring

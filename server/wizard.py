@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -118,8 +119,10 @@ def write_config(workspace_id, workspace_name, dataset_id, dataset_name):
     config["datasets"] = datasets
 
     CACHE_DIR.mkdir(exist_ok=True)
+    os.chmod(CACHE_DIR, 0o700)
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
+    os.chmod(CONFIG_PATH, 0o600)
 
     return CONFIG_PATH
 
@@ -131,8 +134,10 @@ def download_config(url):
     config = resp.json()
 
     CACHE_DIR.mkdir(exist_ok=True)
+    os.chmod(CACHE_DIR, 0o700)
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
+    os.chmod(CONFIG_PATH, 0o600)
 
     return config
 
@@ -267,6 +272,23 @@ def main():
         help="Use device code flow (headless/SSH environments)",
     )
     args = parser.parse_args()
+
+    # Check Presidio is available
+    try:
+        import presidio_analyzer  # noqa: F401
+        import spacy
+        spacy.load("en_core_web_lg")
+    except ImportError:
+        print(f"\n{RED}[FAIL]{NC} Presidio is required but not installed.")
+        print("  Run: pip install presidio-analyzer presidio-anonymizer spacy")
+        print("  Then: python -m spacy download en_core_web_lg")
+        print("  (Note: en_core_web_lg is ~560MB)")
+        return
+    except OSError:
+        print(f"\n{RED}[FAIL]{NC} spaCy model 'en_core_web_lg' not found.")
+        print("  Run: python -m spacy download en_core_web_lg")
+        print("  (Note: en_core_web_lg is ~560MB)")
+        return
 
     print(f"\n{BOLD}  Power BI MCP — Setup Wizard{NC}")
     print(f"  ============================\n")
