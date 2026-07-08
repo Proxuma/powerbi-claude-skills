@@ -61,6 +61,8 @@ Common DAX patterns:
 - **Filter:** `EVALUATE CALCULATETABLE('Table', 'Dim'[Column] = "Value")`
 - **Time intelligence:** Use `DATESYTD`, `SAMEPERIODLASTYEAR`, etc.
 
+**Filtering warning:** filter on numeric ids (`company_id`, `resource_id`) instead of aliased name strings. Names you see (Client_A, Resource_1) are anonymized aliases. The server reverse-maps known aliases inside quoted literals before execution, but ids are always safe.
+
 ### Step 4: Answer the question
 
 Provide a clear, concise answer based on the DAX query results. Include:
