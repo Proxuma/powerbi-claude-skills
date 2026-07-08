@@ -97,8 +97,15 @@ All data is automatically anonymized before it reaches the AI. The AI only sees 
 
 1. **On first query**, the server loads unique values from your configured sensitive columns via DAX
 2. **Every response** passes through two layers:
-   - **Pass 1** — Deterministic lookup: known entities get consistent aliases (fast, auditable)
-   - **Pass 2** — Presidio NLP: catches unexpected PII in free-text fields (optional safety net)
+   - **Pass 1 (deterministic lookup):** known entities get consistent aliases (fast, auditable)
+   - **Pass 2 (Presidio NLP):** catches unexpected PII in free-text fields. This pass is optional and OFF by default: `pip install -r requirements.txt` does not install it, so on a default install only Pass 1 runs. To turn Pass 2 on, install the packages and the spaCy model:
+
+     ```bash
+     pip install presidio-analyzer presidio-anonymizer spacy
+     python -m spacy download en_core_web_sm
+     ```
+
+     The server warns on startup when Pass 2 is configured but not installed, and the `anonymization_status` tool shows whether Pass 2 is ACTIVE or INACTIVE.
 3. **After report generation**, restore real names locally
 
 ### Restoring real names
