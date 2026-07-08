@@ -147,11 +147,14 @@ Body font:        Open Sans
     <span>View DAX Query — [Description]</span>
   </div>
   <div class="dax-content">
-    <pre><code>EVALUATE ...</code></pre>
+    <pre><code>EVALUATE ...
+-- Result: total_tickets = 1284</code></pre>
     <button class="dax-copy" onclick="event.stopPropagation();prxCopyDAX(this)">Copy Query</button>
   </div>
 </div>
 ```
+
+**End every query with a `-- Result:` comment line stating the number(s) that section displays, exactly as shown (including decimals or a % sign).** This is what makes the report verifiable: anyone can run `python3 tools/verify_report.py report.html` to re-execute every query in this report against the live dataset and confirm the stated numbers match.
 
 **OUTPUT: Write the DAX copy function in the script block:**
 ```javascript

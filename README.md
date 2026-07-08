@@ -13,6 +13,7 @@ You ask a business question. The AI queries your data model, anonymizes it, and 
 | **QBR Prompt** | Generates a board-ready Quarterly Business Review (the "Clear Perspective" design) with a PDF export button — matches your brand automatically if you point it at your website |
 | **Project Report Prompt** | Generates project status reports |
 | **Data Anonymization** | Two-pass anonymization: deterministic aliases + NLP safety net |
+| **DAX Verifier** | Re-runs every DAX query in a generated report and checks that the numbers match your data |
 | **Setup Wizard** | Auto-discovers workspaces, datasets, and sensitive columns |
 
 ## Quick start
@@ -154,6 +155,34 @@ Once the server is running, your AI assistant has access to:
 | `get_schema` | Full schema (caution: can be >10MB) |
 | `anonymization_status` | Show anonymization state and entity counts |
 
+## Verify a report's numbers
+
+Every generated report carries the DAX query that produced each section's numbers, in a collapsible panel. You do not have to take those numbers on trust: the verifier re-runs every query against your own tenant and checks that the values in the report match what Power BI returns.
+
+```bash
+python3 tools/verify_report.py report.html
+```
+
+The tool extracts every query from the report (both the standard report's DAX toggles and the QBR's DAX proof panels), executes each one, and compares the returned values against the numbers stated in the query's `-- Result:` comment line. It prints a PASS/FAIL table per query and exits nonzero on any failure, so you can run it in a pipeline:
+
+```
+Extracted 3 DAX queries (1 dax-toggle, 2 dax-proof)
+
+SECTION          STATUS  DETAIL
+---------------  ------  ----------------------------------------
+Total companies  PASS    1 value(s) match
+Service desk     FAIL    expected 68000 not in returned values [67521.0]
+Asset density    PASS    1 value(s) match
+```
+
+Details:
+
+- The dataset id resolves the same way the MCP server resolves it. Pass `--dataset-id` to override.
+- Queries that still contain anonymization aliases (Client_A, `<PERSON_1>`) are rewritten to real values before execution, using the session mapping and the same code path as the server's `execute_dax`. Only names are ever aliased, never numbers, so the value comparison is unaffected.
+- Values match at the precision the report displays: a report that shows 4.7 passes when the model returns 4.7143. Percentages match both 93 and 0.93.
+- A query without a `-- Result:` line is still executed and must run without error; its values are not checked and the table says so.
+- `--extract-only` lists the queries without executing them. `--json results.json` writes a machine-readable copy.
+
 ## Requirements
 
 - Python 3.10+
@@ -193,6 +222,8 @@ powerbi-claude-skills/
 ├── templates/
 │   ├── report-shell.html      # Report HTML template (with restore UI)
 │   └── qbr-template.html      # QBR design template ("Clear Perspective", re-skinnable, PDF-ready)
+├── tools/
+│   └── verify_report.py       # Re-run a report's DAX and check its numbers
 ├── tests/                     # Test suite
 ├── requirements.txt
 ├── LICENSE
