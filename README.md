@@ -10,7 +10,7 @@ You ask a business question. The AI queries your data model, anonymizes it, and 
 |-----------|-------------|
 | **MCP Server** | Python server connecting AI tools to Power BI and Fabric APIs |
 | **Report Prompt** | Generates standalone HTML reports with KPIs, tables, analysis, and findings |
-| **QBR Prompt** | Generates Quarterly Business Review reports |
+| **QBR Prompt** | Generates a board-ready Quarterly Business Review (the "Clear Perspective" design) with a PDF export button — matches your brand automatically if you point it at your website |
 | **Project Report Prompt** | Generates project status reports |
 | **Data Anonymization** | Two-pass anonymization: deterministic aliases + NLP safety net |
 | **Setup Wizard** | Auto-discovers workspaces, datasets, and sensitive columns |
@@ -68,9 +68,26 @@ Import these as slash commands or paste them as system prompts.
 | File | Use |
 |------|-----|
 | `prompts/powerbireport.md` | `#powerbireport what is my monthly revenue trend?` |
-| `prompts/powerbireportQBR.md` | `#powerbireportQBR Q1 2026` |
+| `prompts/powerbireportQBR.md` | `#powerbireportQBR Contoso Q1 2026` |
 | `prompts/projectreport.md` | `#projectreport Project Alpha` |
 | `prompts/powerbi.md` | General Power BI data questions |
+
+## QBR styling and branding
+
+The QBR prompt builds on `templates/qbr-template.html` — a self-contained, print-ready design
+with a cover, a maturity benchmark, service/security/hardware/contract sections, a risk and
+action list, and a floating **Export as PDF** button.
+
+- **Say nothing about styling** and you get the default "Clear Perspective" look.
+- **Point it at your website** ("match acme-it.com", "use our brand", or hand it your logo) and
+  it re-skins the report to your palette and fonts and drops in your logo, calibrated so it
+  reads cleanly on the header background. The layout and components stay the same; only the
+  brand layer changes.
+- Report prose is written in whatever language you work in (English by default); numbers format
+  to the matching locale.
+
+You never anonymize by hand for the QBR. The MCP hands the AI aliased data, the report is built
+from those aliases, and real names are restored locally at the end (see below).
 
 ## Data anonymization
 
@@ -167,7 +184,8 @@ powerbi-claude-skills/
 │   ├── projectreport.md       # Project report generator
 │   └── powerbi.md             # General Power BI queries
 ├── templates/
-│   └── report-shell.html      # Report HTML template (with restore UI)
+│   ├── report-shell.html      # Report HTML template (with restore UI)
+│   └── qbr-template.html      # QBR design template ("Clear Perspective", re-skinnable, PDF-ready)
 ├── tests/                     # Test suite
 ├── requirements.txt
 ├── LICENSE
