@@ -181,3 +181,47 @@ def test_duplicate_values_across_columns_not_duplicated():
     # Same value from two columns should only get one alias
     assert len(registry.get_mapping()) == 1
     assert registry.anonymize("Acme Corp") == "Client_A"
+
+
+def _registry_with(values):
+    registry = EntityRegistry(sensitive_columns={}, dax_executor=lambda q: {})
+    for value in values:
+        registry.register_dynamic(value, "client")
+    return registry
+
+
+def test_short_client_name_does_not_corrupt_words():
+    """A client named "IT" must not rewrite those letters inside other words."""
+    registry = _registry_with(["IT"])
+    result = registry.anonymize_text("quality items in the IT backlog")
+    assert result == "quality items in the Client_A backlog"
+
+
+def test_month_like_client_name_does_not_corrupt_words():
+    """A client named "May" must not rewrite "Maybe"."""
+    registry = _registry_with(["May"])
+    result = registry.anonymize_text("Maybe May will confirm in May.")
+    assert result == "Maybe Client_A will confirm in Client_A."
+
+
+def test_short_client_name_does_not_corrupt_dax():
+    """"IT" inside DAX keywords and column names must stay untouched."""
+    registry = _registry_with(["IT"])
+    dax = 'EVALUATE FILTER(Tickets, Tickets[Priority] = "Critical")'
+    assert registry.anonymize_text(dax) == dax
+
+
+def test_boundary_guard_still_matches_adjacent_punctuation():
+    registry = _registry_with(["Acme Corp"])
+    result = registry.anonymize_text("Report for Acme Corp's Q3 (Acme Corp).")
+    assert "Acme Corp" not in result
+    assert "Client_A's" in result
+    assert "(Client_A)" in result
+
+
+def test_entity_ending_in_punctuation_still_matches():
+    """Entity values can end with non-word chars, where \\b-style guards fail."""
+    registry = _registry_with(["Acme B.V."])
+    result = registry.anonymize_text("Invoice sent to Acme B.V. yesterday")
+    assert "Acme B.V." not in result
+    assert "Client_A" in result
