@@ -54,3 +54,15 @@ def test_register_dynamic_auto_index():
     registry.register_dynamic("piet@company.com", "contact")
     assert "Contact_1" in registry._reverse
     assert "Contact_2" in registry._reverse
+
+
+def test_register_dynamic_fabric_item():
+    """Fabric item display names (often customer names) should be anonymized."""
+    registry = EntityRegistry(sensitive_columns={}, dax_executor=lambda q: {})
+    registry.register_dynamic("QBR Contoso", "item", 0)
+    anon = Anonymizer(registry=registry, presidio_enabled=False)
+    output = "- QBR Contoso (Report)\n  ID: abc-123"
+    result = anon.anonymize_text(output)
+    assert "QBR Contoso" not in result
+    assert "Item_1" in result
+    assert "abc-123" in result

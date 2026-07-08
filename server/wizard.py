@@ -126,6 +126,35 @@ def write_config(workspace_id, workspace_name, dataset_id, dataset_name):
     return CONFIG_PATH
 
 
+def warn_if_detection_skipped():
+    """Warn when a non-interactive mode leaves anonymization with nothing to match.
+
+    Modes 1 (--config-url) and 2 (--workspace-id/--dataset-id) never run
+    sensitive-column auto-detection. If the resulting config carries no
+    sensitive_columns, the Pass 1 registry is empty and real names reach
+    the AI unmasked, so say that out loud instead of finishing quietly.
+    """
+    config = {}
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH) as f:
+                config = json.load(f)
+        except Exception:
+            pass
+
+    anon = config.get("anonymization") or {}
+    cols = anon.get("sensitive_columns") or {}
+    if any(cols.values()):
+        return False
+
+    warn("Sensitive-column auto-detection did NOT run in this mode, and the")
+    warn("config has no sensitive_columns. Anonymization has nothing to match,")
+    warn("so real client, resource and contact names will reach the AI as-is.")
+    warn("Run the interactive wizard (python -m server.wizard, no flags) to")
+    warn(f"auto-detect columns, or add sensitive_columns to {CONFIG_PATH}.")
+    return True
+
+
 def download_config(url):
     """Download config JSON from an IT-hosted endpoint."""
     resp = requests.get(url, timeout=15)
@@ -367,6 +396,8 @@ def main():
         except Exception as e:
             fail(f"Failed to download config: {e}")
 
+        warn_if_detection_skipped()
+
         # Authenticate to cache token
         print(f"\n{BOLD}  Authenticating...{NC}")
         try:
@@ -388,6 +419,8 @@ def main():
         info(f"Config written to {CONFIG_PATH}")
         info(f"Workspace: {args.workspace_id}")
         info(f"Dataset:   {args.dataset_id}")
+
+        warn_if_detection_skipped()
 
         # Authenticate
         if not args.silent:
@@ -487,7 +520,6 @@ def main():
             config["anonymization"] = {
                 "enabled": True,
                 "sensitive_columns": candidates,
-                "free_text_columns": [],
                 "presidio_enabled": True,
                 "session_retention_days": 90,
             }
