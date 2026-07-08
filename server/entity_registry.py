@@ -109,7 +109,13 @@ class EntityRegistry:
         result = text
         for norm, original in self._sorted_entities:
             alias = self._forward[norm]
-            pattern = re.compile(re.escape(original), re.IGNORECASE)
+            # Boundary guards: a client named "IT" or "May" must not rewrite
+            # those letters inside "quality" or "Maybe". Conditional lookarounds
+            # because entity values can start or end with punctuation, where a
+            # plain \b never matches.
+            prefix = r"(?<!\w)" if re.match(r"\w", original) else ""
+            suffix = r"(?!\w)" if re.search(r"\w$", original) else ""
+            pattern = re.compile(prefix + re.escape(original) + suffix, re.IGNORECASE)
             result = pattern.sub(alias, result)
         return result
 

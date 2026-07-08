@@ -114,7 +114,7 @@ def _init_anonymizer():
 
     if registry.is_degraded:
         for warning in registry.get_warnings():
-            print(f"[ANON WARNING] {warning}", flush=True)
+            print(f"[ANON WARNING] {warning}", file=sys.stderr, flush=True)
 
     _anonymizer_instance = Anonymizer(
         registry=registry,
@@ -419,36 +419,13 @@ async def call_tool(name: str, arguments: dict):
             if not workspace_id or not dataset_id:
                 return [TextContent(type="text", text="Error: workspace_id and dataset_id are required. Provide them as arguments or set defaults in config.json.")]
 
-            response = requests.post(
-                f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/semanticModels/{dataset_id}/getDefinition",
-                headers=get_fabric_headers()
-            )
-
-            if response.status_code == 202:
-                location = response.headers.get("Location")
-                if location:
-                    for _ in range(30):
-                        time.sleep(2)
-                        result = requests.get(location, headers=get_fabric_headers())
-                        if result.status_code == 200:
-                            data = result.json()
-                            if data.get("status") == "Succeeded":
-                                result_response = requests.get(
-                                    f"{location}/result",
-                                    headers=get_fabric_headers()
-                                )
-                                if result_response.ok:
-                                    anonymized_data = _anonymize_json(result_response.json())
-                                    _save_mapping()
-                                    return [TextContent(type="text", text=json.dumps(anonymized_data, indent=2))]
-                            elif data.get("status") == "Failed":
-                                return [TextContent(type="text", text=f"Failed: {data.get('error')}")]
-                    return [TextContent(type="text", text="Timeout waiting for schema")]
-
-            response.raise_for_status()
-            anonymized_data = _anonymize_json(response.json())
+            # The raw getDefinition payload carries the model as base64 TMDL
+            # parts, which the anonymizer cannot see through. Decode to text
+            # first so entity names inside the schema get anonymized.
+            decoded_schema = fetch_and_decode_schema(workspace_id, dataset_id)
+            anonymized_schema = _anonymize_text(decoded_schema)
             _save_mapping()
-            return [TextContent(type="text", text=json.dumps(anonymized_data, indent=2))]
+            return [TextContent(type="text", text=anonymized_schema)]
 
         elif name == "list_fabric_items":
             args = resolve_ids(arguments, need_workspace=True, need_dataset=False)
@@ -461,6 +438,19 @@ async def call_tool(name: str, arguments: dict):
             )
             response.raise_for_status()
             items = response.json().get("value", [])
+
+            # Register item display names (often customer names, e.g. a report
+            # called "QBR Contoso") so they leave as aliases, mirroring
+            # list_workspaces and list_datasets.
+            anon = _init_anonymizer()
+            if anon._enabled:
+                for i, item in enumerate(items):
+                    display_name = item.get("displayName", "")
+                    if display_name:
+                        anon._registry.register_dynamic(
+                            display_name, "item", i
+                        )
+
             output = "Items in workspace:\n\n"
             for item in items:
                 output += f"- {item.get('displayName')} ({item.get('type')})\n  ID: {item.get('id')}\n\n"

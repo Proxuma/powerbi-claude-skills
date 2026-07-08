@@ -12,7 +12,6 @@
       "resource": [],
       "contact": []
     },
-    "free_text_columns": [],
     "presidio_enabled": true,
     "session_retention_days": 90,
     "encrypt_mappings": false
