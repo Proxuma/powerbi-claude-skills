@@ -173,6 +173,7 @@ function prxCopyDAX(btn) {
 - Bold key numbers with `<strong>`.
 - Use real numbers from DAX queries. Never fabricate data.
 - Data is pre-anonymized by the MCP server. Client names appear as Client_A, Client_B, etc. Resource names appear as Resource_1, Resource_2, etc. Use these aliases as-is in the report. Do NOT attempt to guess or replace real names.
+- When filtering in DAX, filter on numeric ids (company_id, resource_id) instead of aliased name strings. The server reverse-maps known aliases inside quoted literals before execution, but ids are always safe.
 - Findings are numbered with specific data-backed recommendations.
 
 ---

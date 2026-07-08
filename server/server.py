@@ -387,6 +387,18 @@ async def call_tool(name: str, arguments: dict):
             if not dataset_id:
                 return [TextContent(type="text", text="Error: dataset_id is required. Provide it as an argument or set default_dataset_id in config.json.")]
             dax_query = arguments["dax_query"]
+            # The AI only ever sees aliases (Client_A, Resource_1, <PERSON_1>),
+            # so filters it writes on aliased name strings would silently match
+            # 0 rows in the real tenant. Rewrite known alias literals back to
+            # real values before execution; the response is re-anonymized below.
+            anon = _init_anonymizer()
+            dax_query, rewritten = anon.deanonymize_dax(dax_query)
+            if rewritten:
+                print(
+                    f"[ANON] Rewrote {rewritten} alias literal(s) in DAX before execution",
+                    file=sys.stderr,
+                    flush=True,
+                )
             response = requests.post(
                 f"https://api.powerbi.com/v1.0/myorg/datasets/{dataset_id}/executeQueries",
                 headers=get_powerbi_headers(),
