@@ -38,6 +38,46 @@ _PRESIDIO_ALLOWLIST = {
 }
 
 
+# Aliases produced by Pass 1 (registry) and Pass 2 (Presidio tokens like <PERSON_1>).
+_DAX_ALIAS = re.compile(
+    r'Client_[A-Z0-9]+|Resource_\d+|Contact_\d+|Workspace_\d+|Dataset_\d+'
+    r'|<[A-Z][A-Z_]*_\d+>'
+)
+
+# A DAX string literal: double-quoted, with "" as the escaped quote.
+_DAX_STRING_LITERAL = re.compile(r'"(?:[^"]|"")*"')
+
+
+def rewrite_alias_literals(dax_query: str, mapping: dict[str, str]) -> tuple[str, int]:
+    """Rewrite known alias literals in a DAX query back to their real values.
+
+    The AI only ever sees aliases, so a follow-up filter like
+    'Companies'[company_name] = "Client_A" would silently match 0 rows in the
+    real tenant. This rewrites aliases back to real values, but ONLY inside
+    double-quoted string literals: bare identifiers, table and column names
+    are never touched. Aliases not present in the mapping stay untouched.
+
+    Returns (rewritten_query, number_of_aliases_replaced).
+    """
+    count = 0
+
+    def _replace_literal(literal_match: re.Match) -> str:
+        nonlocal count
+        inner = literal_match.group(0)[1:-1]
+
+        def _replace_alias(alias_match: re.Match) -> str:
+            nonlocal count
+            real = mapping.get(alias_match.group(0))
+            if real is None:
+                return alias_match.group(0)
+            count += 1
+            return real.replace('"', '""')
+
+        return '"' + _DAX_ALIAS.sub(_replace_alias, inner) + '"'
+
+    return _DAX_STRING_LITERAL.sub(_replace_literal, dax_query), count
+
+
 class Anonymizer:
     def __init__(
         self,
@@ -151,6 +191,15 @@ class Anonymizer:
         mapping = dict(self._registry.get_mapping())
         mapping.update(self._presidio_mapping)
         return mapping
+
+    def deanonymize_dax(self, dax_query: str) -> tuple[str, int]:
+        """Rewrite alias literals in an inbound DAX query back to real values.
+
+        Returns (rewritten_query, number_of_aliases_replaced).
+        """
+        if not self._enabled or not dax_query:
+            return dax_query, 0
+        return rewrite_alias_literals(dax_query, self.get_full_mapping())
 
     def get_stats(self) -> dict:
         return {
