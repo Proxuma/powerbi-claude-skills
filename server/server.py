@@ -1,6 +1,7 @@
 import json
 import asyncio
 import os
+import sys
 import time
 import base64
 import re
@@ -17,7 +18,7 @@ from server.auth import (
 
 # New anonymization engine
 from server.entity_registry import EntityRegistry
-from server.anonymizer import Anonymizer
+from server.anonymizer import Anonymizer, PRESIDIO_INSTALL_HINT
 from server.mapping import MappingStore
 
 # User config — env vars > local config.json > ~/.powerbi-mcp/config.json
@@ -119,6 +120,18 @@ def _init_anonymizer():
         registry=registry,
         presidio_enabled=anon_config.get("presidio_enabled", True),
     )
+
+    # Config says Pass 2 is on but the packages are not importable: warn once,
+    # loudly, on stderr. Without this a default install silently runs Pass 1 only.
+    if _anonymizer_instance.presidio_state() == "not_installed":
+        print(
+            "[ANON WARNING] Pass 2 (Presidio) is INACTIVE: presidio_enabled is "
+            "true in config.json but the packages are not installed. Only Pass 1 "
+            "(deterministic registry lookup) is anonymizing your data. To enable "
+            f"Pass 2, run: {PRESIDIO_INSTALL_HINT}",
+            file=sys.stderr,
+            flush=True,
+        )
 
     # Initialize mapping store
     retention = anon_config.get("session_retention_days", 90)
@@ -526,6 +539,7 @@ async def call_tool(name: str, arguments: dict):
             output += f"  Enabled: {anon._enabled}\n"
             output += f"  Session: {session_id}\n"
             output += f"  Entities mapped: {stats.get('registry_entities', 0)}\n"
+            output += f"  {anon.presidio_status_line()}\n"
             output += f"  Presidio detections: {stats.get('presidio_detections', 0)}\n"
             if anon._registry.is_degraded:
                 output += "  WARNING: Registry in degraded mode (some columns failed to load)\n"

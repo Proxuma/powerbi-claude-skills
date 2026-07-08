@@ -7,9 +7,15 @@ The mapping is accumulated across all tool calls in a session.
 """
 
 import re
+import sys
 from typing import Optional
 
 from server.entity_registry import EntityRegistry
+
+PRESIDIO_INSTALL_HINT = (
+    "pip install presidio-analyzer presidio-anonymizer spacy "
+    "&& python -m spacy download en_core_web_sm"
+)
 
 # Non-PII values that Presidio incorrectly flags.
 # Months, days, priority levels (EN + NL), status names, common business terms.
@@ -46,6 +52,48 @@ class Anonymizer:
         self._presidio_counter: dict[str, int] = {}    # entity_type -> counter
         self._analyzer = None
         self._anonymizer_engine = None
+        self._presidio_available: Optional[bool] = None  # None = not checked yet
+        self._presidio_error: Optional[str] = None       # runtime failure message
+
+    # ------------------------------------------------------------------
+    # Presidio availability
+    # ------------------------------------------------------------------
+
+    @property
+    def presidio_available(self) -> bool:
+        """True if the Presidio packages can be imported. Checked once, cached."""
+        if self._presidio_available is None:
+            try:
+                import presidio_analyzer  # noqa: F401
+                import presidio_anonymizer  # noqa: F401
+                self._presidio_available = True
+            except ImportError:
+                self._presidio_available = False
+        return self._presidio_available
+
+    def presidio_state(self) -> str:
+        """One of: 'active', 'disabled', 'not_installed', 'failed'."""
+        if not self._enabled or not self._presidio_enabled:
+            return "disabled"
+        if not self.presidio_available:
+            return "not_installed"
+        if self._presidio_error:
+            return "failed"
+        return "active"
+
+    def presidio_status_line(self) -> str:
+        """Human-readable Pass 2 status for the anonymization_status tool."""
+        state = self.presidio_state()
+        if state == "active":
+            return "Pass 2 (Presidio): ACTIVE"
+        if state == "disabled":
+            return "Pass 2 (Presidio): INACTIVE (disabled in config)"
+        if state == "failed":
+            return f"Pass 2 (Presidio): INACTIVE (failed to start: {self._presidio_error})"
+        return (
+            "Pass 2 (Presidio): INACTIVE (packages not installed; "
+            f"run: {PRESIDIO_INSTALL_HINT})"
+        )
 
     # ------------------------------------------------------------------
     # Presidio lazy loading
@@ -79,8 +127,9 @@ class Anonymizer:
         # Pass 1: deterministic replacement via EntityRegistry
         result = self._registry.anonymize_text(text)
 
-        # Pass 2: Presidio NLP safety net
-        if self._presidio_enabled:
+        # Pass 2: Presidio NLP safety net (only when the packages are installed;
+        # _init_anonymizer warns on stderr when they are not)
+        if self._presidio_enabled and self.presidio_available:
             result = self._presidio_pass(result)
 
         return result
@@ -116,13 +165,27 @@ class Anonymizer:
     # ------------------------------------------------------------------
 
     def _presidio_pass(self, text: str) -> str:
-        """Run Presidio NER and replace detections with indexed tokens."""
+        """Run Presidio NER and replace detections with indexed tokens.
+
+        Only called when the packages are importable (see anonymize_text), so
+        an exception here means a working install failed at runtime (e.g. the
+        spaCy model is missing). That stays non-fatal, but is recorded and
+        warned about once so it cannot fail silently.
+        """
         try:
             analyzer, _ = self._get_presidio()
-        except Exception:
+            results = analyzer.analyze(text=text, language="en", score_threshold=0.7)
+        except Exception as e:
+            if self._presidio_error is None:
+                self._presidio_error = str(e)
+                print(
+                    f"[ANON WARNING] Pass 2 (Presidio) failed to run: {e}. "
+                    "Continuing with Pass 1 only. If the spaCy model is missing, "
+                    "run: python -m spacy download en_core_web_sm",
+                    file=sys.stderr,
+                    flush=True,
+                )
             return text
-
-        results = analyzer.analyze(text=text, language="en", score_threshold=0.7)
         if not results:
             return text
 
