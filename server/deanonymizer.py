@@ -23,10 +23,20 @@ def deanonymize_text(text: str, mapping: dict[str, str]) -> str:
 
 
 def deanonymize_html(html_text: str, mapping: dict[str, str]) -> str:
-    """Replace aliases in HTML, HTML-escaping real values to prevent XSS."""
+    """Replace aliases in HTML, HTML-escaping real values to prevent XSS.
+
+    Aliases with HTML-special characters (Presidio tokens like <PERSON_1>)
+    appear HTML-escaped in well-formed report HTML, so the escaped form of
+    each alias is matched as well as the raw form.
+    """
     if not html_text or not mapping:
         return html_text
-    safe_mapping = {alias: html.escape(real) for alias, real in mapping.items()}
+    safe_mapping = {}
+    for alias, real in mapping.items():
+        safe_mapping[alias] = html.escape(real)
+        escaped_alias = html.escape(alias)
+        if escaped_alias != alias:
+            safe_mapping[escaped_alias] = html.escape(real)
     return deanonymize_text(html_text, safe_mapping)
 
 

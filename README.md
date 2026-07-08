@@ -110,7 +110,7 @@ All data is automatically anonymized before it reaches the AI. The AI only sees 
 
 ### Restoring real names
 
-**Option A — Drag and drop:** Open the generated report in a browser. Drag `~/.powerbi-mcp/sessions/latest/mapping.json` onto the restore button at the top of the page.
+**Option A — In the browser:** Open the generated report. A yellow restore bar sits at the top of the page. Drag `~/.powerbi-mcp/sessions/latest/mapping.json` onto that bar, or click "Load mapping.json" on the bar and pick the file.
 
 **Option B — CLI:**
 ```bash
