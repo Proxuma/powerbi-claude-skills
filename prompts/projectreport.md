@@ -1,8 +1,11 @@
 # Project Report Generator
 
 Generate TWO professional HTML project reports with PDF export from Power BI / Autotask PSA data:
-1. **External Report** - Customer-facing (customer branding, no financial data, resource names anonymized)
-2. **Internal Report** - MSP internal use (MSP branding, full financial data, real names, profitability analysis)
+1. **External Report** - Customer-facing (customer branding, no financial data)
+2. **Internal Report** - MSP internal use (MSP branding, full financial data, profitability analysis)
+
+Both reports are built with the aliases the MCP server returns (Client_A, Resource_1, and so on).
+Real names come back locally, after generation, through the deanonymizer. See NAME HANDLING below.
 
 ## Usage
 The user will specify which customer/project to generate a report for: $ARGUMENTS
@@ -171,42 +174,40 @@ You MUST generate two separate HTML files for every project.
 
 ## NAME HANDLING
 
-### External Report (customer-facing)
-- **Customer/company name:** Use REAL name (this report is for them)
-- **Project name:** Use REAL name
-- **MSP resource names:** Anonymize with common American names (the customer doesn't need to know individual tech names)
-- **MSP company name:** Use REAL name (your logo is on it)
+### Data comes pre-anonymized. Do not anonymize anything yourself.
 
-### Internal Report (MSP team)
-- **All names:** Use REAL names — no anonymization (this report is for internal use only)
-- **Customer name, project name, resource names:** All real
+The MCP server anonymizes every tool response before it reaches you. You will see aliases like
+`Client_A`, `Resource_1`, `Contact_3`, never real names. This is by design. Do not add, remove,
+or second-guess anonymization. Do not invent replacement names: names you invent are not in the
+mapping file, so the deanonymizer cannot restore them. Do not claim to use real names: real
+names never exist in your context. Build both reports with exactly the aliases the MCP returns.
 
-### When anonymization IS appropriate
-If the user explicitly asks for demo/sample reports, or if they're generating reports for a portfolio/showcase, apply full anonymization:
+Real names are restored locally, after generation, by the deanonymizer. The mapping file
+(`~/.powerbi-mcp/sessions/latest/mapping.json`) never leaves the user's machine. The round trip
+(anonymize on the way out, restore on the way back) is the MCP's job, not yours.
 
-**Person Names (for demo mode):**
-Replace with common American first + last name combinations:
-- Michael Johnson, Sarah Williams, David Anderson, Jennifer Miller
-- Christopher Davis, Emily Wilson, Matthew Brown, Amanda Taylor
-- James Peterson, Robert Collins, William Stevens, Thomas Mitchell
+### External vs Internal is a restore decision, not a generation decision
 
-**Customer/Company Names (for demo mode):**
+Both reports are generated with the same aliases. What differs is what the MSP restores
+afterwards, either with the CLI (`python -m server report.html -o report-real.html`) or by
+dropping `mapping.json` on the yellow restore bar at the top of the report:
 
-| Industry | Pattern Examples |
-|----------|------------------|
-| **Banks** | Riverside Bank, Summit State Bank, First Heritage Bank |
-| **Credit Unions** | Lakeside Credit Union, Heritage Federal Credit Union |
-| **Companies** | Precision Industries Inc., Northland Services LLC |
-| **Construction** | Eastbrook Construction, Ridgeline Builders |
-| **Cities** | City of Westfield, City of Lakewood, City of Fairmont |
-| **Healthcare** | Northside Medical Clinic, Family Health Associates |
-| **Non-Profits** | Heritage Community Foundation, Discovery Science Museum |
+- **Internal report:** restore everything. The team sees all real names.
+- **External report:** the subject customer's own company and project name in the title and
+  cover are expected and fine; the MSP is presenting to that client. Never expose other
+  clients' data. If the MSP wants resource names kept aliased for the customer, restore
+  selectively: make a copy of `mapping.json`, delete the `Resource_*` entries from the copy,
+  and load that copy in the restore bar.
 
-### Anonymization Rules (when applicable)
-1. Create a consistent mapping: same original name = same replacement throughout BOTH reports
-2. Keep project TYPE/STRUCTURE intact, only replace identifiable names
-3. BOTH reports use the EXACT SAME anonymized names
-4. NEVER show original names in console output or your response messages
+### Demo, portfolio, and showcase reports
+
+The aliases ARE the demo mode. A portfolio or showcase report is simply the aliased build left
+unrestored. Do not invent sample names for it.
+
+### Formatting rules for aliases and DAX
+
+- When filtering in DAX, filter on numeric ids (company_id, resource_id) instead of aliased name strings. The server reverse-maps known aliases inside quoted literals before execution, but ids are always safe.
+- If an alias contains angle brackets (Presidio Pass 2 produces aliases like `<PERSON_1>`), write it HTML-escaped in the report HTML: `&lt;PERSON_1&gt;`. A raw `<PERSON_1>` is parsed by browsers as an unknown tag and renders as nothing. Both restore paths still match the escaped form.
 
 ---
 
@@ -230,7 +231,7 @@ Replace with common American first + last name combinations:
 7. **Phase Summary Table** - Hours per phase with status pills, budget/spent/remaining columns, footer totals
 8. **Budget Bar Chart** - Visual bar chart showing spent vs. budget per phase with colored bars (ok/warn/over)
 9. **Management Summary** - Narrative summary of project status, 2-3 paragraphs
-10. **Resource Overview** - Table with anonymized resource names, role, hours this period, total spent, budget, available
+10. **Resource Overview** - Table with resource aliases as returned by the MCP (Resource_1, Resource_2, ...), role, hours this period, total spent, budget, available
 11. **Completed Work** - Checklist with green checkmarks
 12. **Planned Work** - Checklist with circle icons
 13. **Risks & Issues** - Table with #, risk, impact, likelihood, status pills, mitigation
@@ -244,9 +245,8 @@ Replace with common American first + last name combinations:
 
 **Filename:** `INTERNAL_Project_[ProjectName]_Report.html`
 
-**Name handling:** Use REAL names throughout (see NAME HANDLING section). Customer name, project name, resource names — all real. This is an internal document.
-- The only differences from external: Internal includes financial data, DAX queries, real resource names, and confidential banner
-- If generating in demo mode, use the same anonymized names as the External report
+**Name handling:** Same aliases as the External report (see NAME HANDLING section). The MSP restores all real names locally after generation, with the CLI or the restore bar.
+- The only differences from external: Internal includes financial data, DAX queries, and the confidential banner
 
 **Additional Sections (beyond everything in the external report):**
 
@@ -679,6 +679,58 @@ The parent `.gantt-grid` must have `style="--days: 20;"`.
 ```
 
 **User instruction:** When exporting, use browser's "Save as PDF" option in the print dialog. Zero external libraries, better quality output, works offline.
+
+---
+
+## DATA RESTORE BAR (include verbatim)
+
+**Both generated reports (External AND Internal) MUST include this script, copied verbatim, at the end of their script block.** It injects a yellow bar at the top of the page where the user restores real names locally: drag `mapping.json` onto the bar, or click "Load mapping.json" and pick the file. Without this script the report has no restore UI and the restore instructions in the OUTPUT section are false.
+
+```javascript
+/* === Data Restore (Deanonymization) === */
+(function(){
+var st=document.createElement('style');st.textContent='@media print{#prx-restore-bar{display:none}}';document.head.appendChild(st);
+var bar=document.createElement('div');bar.id='prx-restore-bar';
+bar.innerHTML='<div style="background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:12px 20px;margin:20px auto;max-width:900px;display:flex;align-items:center;gap:12px;font-family:system-ui,sans-serif;font-size:0.85rem;color:#92400e">'
++'<span style="font-weight:600">This report uses anonymized names. Drop mapping.json on this bar, or</span>'
++'<label style="cursor:pointer;background:#d97706;color:white;padding:6px 14px;border-radius:6px;font-weight:600;font-size:0.8rem">'
++'Load mapping.json <input type="file" accept=".json" style="display:none" id="prx-mapping-input">'
++'</label>'
++'<span id="prx-restore-status"></span>'
++'</div>';
+document.body.insertBefore(bar,document.body.firstChild);
+function prxLoadMapping(file){
+if(!file)return;
+var reader=new FileReader();
+reader.onload=function(ev){
+try{
+var data=JSON.parse(ev.target.result);
+var mapping=data.mappings||data;
+var count=prxRestoreNames(mapping);
+document.getElementById('prx-restore-status').textContent=count+' values restored. You can now save or print this page.';
+bar.querySelector('div').style.background='#d1fae5';
+bar.querySelector('div').style.borderColor='#059669';
+bar.querySelector('div').style.color='#065f46';
+}catch(err){document.getElementById('prx-restore-status').textContent='Invalid mapping file.';}
+};reader.readAsText(file);
+}
+document.getElementById('prx-mapping-input').addEventListener('change',function(e){prxLoadMapping(e.target.files[0]);});
+bar.addEventListener('dragover',function(e){e.preventDefault();e.stopPropagation();});
+bar.addEventListener('drop',function(e){e.preventDefault();e.stopPropagation();if(e.dataTransfer&&e.dataTransfer.files.length)prxLoadMapping(e.dataTransfer.files[0]);});
+function prxRestoreNames(mapping){
+var count=0;
+var aliases=Object.keys(mapping).sort(function(a,b){return b.length-a.length;});
+var walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,null,false);
+var nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+nodes.forEach(function(node){
+var text=node.textContent;var changed=false;
+aliases.forEach(function(alias){
+if(text.indexOf(alias)!==-1){
+text=text.split(alias).join(mapping[alias]);changed=true;count++;}
+});if(changed)node.textContent=text;
+});return count;}
+})();
+```
 
 ---
 
@@ -1528,7 +1580,7 @@ Use this as the skeleton for the external report. Replace bracketed values with 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>[Anonymized Project Name] - Project Status Report</title>
+    <title>[Project alias as returned by MCP] - Project Status Report</title>
     <style>
         /* === PASTE FULL CSS FRAMEWORK HERE === */
     </style>
@@ -1557,8 +1609,8 @@ Use this as the skeleton for the external report. Replace bracketed values with 
 
             <!-- Title Section -->
             <div class="title-section">
-                <h1>[Anonymized Project Name]</h1>
-                <div class="client-name">[Anonymized Client Name]</div>
+                <h1>[Project alias as returned by MCP]</h1>
+                <div class="client-name">[Client alias as returned by MCP, e.g. Client_A]</div>
                 <span class="status-badge active">In Progress</span>
                 <div class="title-details">
                     <div class="detail-item">
@@ -1567,11 +1619,11 @@ Use this as the skeleton for the external report. Replace bracketed values with 
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Project Manager</div>
-                        <div class="detail-value">[Anonymized PM Name]</div>
+                        <div class="detail-value">[PM alias as returned by MCP, e.g. Resource_1]</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Contact</div>
-                        <div class="detail-value">[Anonymized Contact]</div>
+                        <div class="detail-value">[Contact alias as returned by MCP, e.g. Contact_1]</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Target Date</div>
@@ -1701,7 +1753,7 @@ Use this as the skeleton for the external report. Replace bracketed values with 
                         </tr>
                     </thead>
                     <tbody>
-                        <!-- Anonymized names -->
+                        <!-- Resource aliases as returned by MCP -->
                     </tbody>
                 </table>
             </div>
@@ -1786,6 +1838,8 @@ Use this as the skeleton for the external report. Replace bracketed values with 
                 setTimeout(() => { btn.textContent = 'Copy Query'; }, 2000);
             });
         }
+
+        /* === PASTE DATA RESTORE SCRIPT HERE, VERBATIM (see DATA RESTORE BAR section) === */
     </script>
 </body>
 </html>
@@ -1893,7 +1947,7 @@ The internal report uses the same skeleton as the external report, with these ad
                         </tr>
                     </thead>
                     <tbody>
-                        <!-- Anonymized names with cost data -->
+                        <!-- Resource aliases with cost data -->
                     </tbody>
                 </table>
             </div>
@@ -1947,6 +2001,8 @@ The internal report uses the same skeleton as the external report, with these ad
                 setTimeout(() => { btn.textContent = 'Copy Query'; }, 2000);
             });
         }
+
+        /* === PASTE DATA RESTORE SCRIPT HERE, VERBATIM (see DATA RESTORE BAR section) === */
     </script>
 </body>
 ```
@@ -1960,11 +2016,12 @@ After generating both reports:
 2. Write Internal HTML to `./INTERNAL_Project_[ProjectName]_Report.html` (user's working directory)
 3. Open BOTH files in browser: `open [external].html && open [internal].html`
 4. Tell the user:
-   - External report is ready to share with the client
-   - Internal report contains confidential financial data, do not share externally
-   - Use Cmd+P (or Ctrl+P) and "Save as PDF" to export
+   - Both reports use anonymized names (Client_A, Resource_1, and so on). To restore real names locally: drop `~/.powerbi-mcp/sessions/latest/mapping.json` on the yellow restore bar at the top of the page, or run the CLI: `python -m server report.html -o report-real.html`
+   - Internal report: restore fully. It contains confidential financial data, do not share it externally.
+   - External report: restoring the customer's own company and project name is expected. To keep resource names aliased for the customer, load a copy of `mapping.json` with the `Resource_*` entries removed.
+   - Use Cmd+P (or Ctrl+P) and "Save as PDF" to export. Print after restoring; the restore bar hides itself in print.
 
-**Console Output Privacy (demo mode only):**
-- When generating demo/showcase reports with anonymization enabled: NEVER mention original names in your output messages
-- Do NOT show name mappings in your response
-- When generating real reports (default): use real names in your summary as they appear in the reports
+**Output checklist:**
+- [ ] Both HTML files include the Data Restore Bar script, copied verbatim (yellow bar, drag and drop plus file picker)
+- [ ] Every name in both reports is an alias exactly as the MCP returned it; no invented names anywhere
+- [ ] Your summary message refers to the project and client by their aliases. Aliases are all you have; never present an alias as a real name and never guess what it stands for.
