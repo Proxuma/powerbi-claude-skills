@@ -162,8 +162,11 @@ reboot-required, no-policy), state what is already scheduled, and show the path 
    "No data available" rather than deleting the section.
 6. **DAX proof panels.** Give every data section a `<details class="dax-proof"><summary>DAX
    query</summary><pre>…</pre></details>` holding the complete, runnable query that produced
-   its numbers. The template already styles these and injects a "Copy DAX" button; they are
-   hidden in print/PDF.
+   its numbers. End every query with a `-- Result:` comment line stating the number(s) the
+   section displays, exactly as shown. That line makes the report checkable: anyone can run
+   `python3 tools/verify_report.py report.html` to re-execute every query against the live
+   dataset and confirm the report's numbers. The template already styles these panels and
+   injects a "Copy DAX" button (which strips the result line); they are hidden in print/PDF.
 
 ---
 
