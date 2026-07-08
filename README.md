@@ -73,6 +73,46 @@ Import these as slash commands or paste them as system prompts.
 | `prompts/projectreport.md` | `#projectreport Project Alpha` |
 | `prompts/powerbi.md` | General Power BI data questions |
 
+## Build your own skill
+
+The prompts above are plain markdown files. To add your own report type (patch compliance,
+onboarding status, license true-up, anything your data supports), copy an existing prompt and
+keep three things intact.
+
+**1. The anatomy.** Every skill prompt follows the same shape:
+
+```
+# Title + one-line purpose
+**Input:** $ARGUMENTS            <- what the user types after the command
+## Discovery                     <- find the data: search_schema + list_measures,
+                                    never get_schema (it can exceed 10MB)
+## Queries                       <- the DAX to run, capped with TOPN/filters
+## Output                        <- exact structure of the HTML/answer
+## Verification                  <- what the AI must check before claiming done
+```
+
+Start from `prompts/powerbi.md` for a question-answer skill or `prompts/powerbireport.md` for
+a full HTML report. Save the file in `prompts/`, register it as a slash command in your AI
+tool, done.
+
+**2. The anonymization contract.** Include this block verbatim near the top of every new
+prompt. It is the standing agreement between your skill and the MCP server:
+
+> Data comes pre-anonymized. The MCP server anonymizes every response before it reaches you:
+> you will see aliases like `Client_A`, `Resource_1`, `Contact_3`, never real names. Do not
+> add, remove, or second-guess anonymization, and do not invent placeholder names yourself.
+> Build the output with the aliases exactly as returned. Real names are restored locally
+> afterwards by the deanonymizer; the mapping never leaves the user's machine. When you filter
+> a query to one entity, filter on its numeric id, not on an aliased name.
+
+**3. The DAX proof requirement.** Every number in the output must come from a DAX query the
+AI actually ran, and each data section must embed that exact query in a collapsible panel
+(`dax-toggle` in reports, `dax-proof` in QBRs; see the templates for markup). This is what
+makes the output checkable: anyone can copy a query, run it against the dataset, and confirm
+the numbers. It also means `tools/verify_report.py` can re-run every query in your new
+skill's output automatically. A skill that produces numbers without embedded DAX is not
+verifiable and does not belong in this repo.
+
 ## QBR styling and branding
 
 The QBR prompt builds on `templates/qbr-template.html` — a self-contained, print-ready design
