@@ -62,6 +62,22 @@ def test_deanonymize_html_escapes_ampersand():
     assert "Tom &amp; Jerry" in result
 
 
+def test_deanonymize_html_matches_escaped_presidio_alias():
+    # Reports write Presidio tokens HTML-escaped so browsers render them.
+    mapping = {"<PERSON_1>": "Jan Jansen"}
+    html_text = "<p>Contact &lt;PERSON_1&gt; for details</p>"
+    result = deanonymize_html(html_text, mapping)
+    assert "Jan Jansen" in result
+    assert "PERSON_1" not in result
+
+
+def test_deanonymize_html_still_matches_raw_presidio_alias():
+    mapping = {"<PERSON_1>": "Jan Jansen"}
+    result = deanonymize_html("<p>Contact <PERSON_1> for details</p>", mapping)
+    assert "Jan Jansen" in result
+    assert "PERSON_1" not in result
+
+
 def test_deanonymize_html_empty_inputs():
     assert deanonymize_html("", {"a": "b"}) == ""
     assert deanonymize_html("<p>hi</p>", {}) == "<p>hi</p>"
