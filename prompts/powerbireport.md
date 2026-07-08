@@ -164,6 +164,56 @@ function prxCopyDAX(btn) {
 }
 ```
 
+## Data Restore Bar (include verbatim)
+
+**Every generated report MUST include this script, copied verbatim, at the end of the script block.** It injects a yellow bar at the top of the page where the user restores real names locally: drag `mapping.json` onto the bar, or click "Load mapping.json" and pick the file. Without this script the report has no restore UI and the instructions in Step 6 are false.
+
+```javascript
+/* === Data Restore (Deanonymization) === */
+(function(){
+var st=document.createElement('style');st.textContent='@media print{#prx-restore-bar{display:none}}';document.head.appendChild(st);
+var bar=document.createElement('div');bar.id='prx-restore-bar';
+bar.innerHTML='<div style="background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:12px 20px;margin:20px auto;max-width:900px;display:flex;align-items:center;gap:12px;font-family:system-ui,sans-serif;font-size:0.85rem;color:#92400e">'
++'<span style="font-weight:600">This report uses anonymized names. Drop mapping.json on this bar, or</span>'
++'<label style="cursor:pointer;background:#d97706;color:white;padding:6px 14px;border-radius:6px;font-weight:600;font-size:0.8rem">'
++'Load mapping.json <input type="file" accept=".json" style="display:none" id="prx-mapping-input">'
++'</label>'
++'<span id="prx-restore-status"></span>'
++'</div>';
+document.body.insertBefore(bar,document.body.firstChild);
+function prxLoadMapping(file){
+if(!file)return;
+var reader=new FileReader();
+reader.onload=function(ev){
+try{
+var data=JSON.parse(ev.target.result);
+var mapping=data.mappings||data;
+var count=prxRestoreNames(mapping);
+document.getElementById('prx-restore-status').textContent=count+' values restored. You can now save or print this page.';
+bar.querySelector('div').style.background='#d1fae5';
+bar.querySelector('div').style.borderColor='#059669';
+bar.querySelector('div').style.color='#065f46';
+}catch(err){document.getElementById('prx-restore-status').textContent='Invalid mapping file.';}
+};reader.readAsText(file);
+}
+document.getElementById('prx-mapping-input').addEventListener('change',function(e){prxLoadMapping(e.target.files[0]);});
+bar.addEventListener('dragover',function(e){e.preventDefault();e.stopPropagation();});
+bar.addEventListener('drop',function(e){e.preventDefault();e.stopPropagation();if(e.dataTransfer&&e.dataTransfer.files.length)prxLoadMapping(e.dataTransfer.files[0]);});
+function prxRestoreNames(mapping){
+var count=0;
+var aliases=Object.keys(mapping).sort(function(a,b){return b.length-a.length;});
+var walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,null,false);
+var nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+nodes.forEach(function(node){
+var text=node.textContent;var changed=false;
+aliases.forEach(function(alias){
+if(text.indexOf(alias)!==-1){
+text=text.split(alias).join(mapping[alias]);changed=true;count++;}
+});if(changed)node.textContent=text;
+});return count;}
+})();
+```
+
 ---
 
 ## Writing Style
@@ -174,6 +224,7 @@ function prxCopyDAX(btn) {
 - Use real numbers from DAX queries. Never fabricate data.
 - Data is pre-anonymized by the MCP server. Client names appear as Client_A, Client_B, etc. Resource names appear as Resource_1, Resource_2, etc. Use these aliases as-is in the report. Do NOT attempt to guess or replace real names.
 - When filtering in DAX, filter on numeric ids (company_id, resource_id) instead of aliased name strings. The server reverse-maps known aliases inside quoted literals before execution, but ids are always safe.
+- If an alias contains angle brackets (Presidio Pass 2 produces aliases like `<PERSON_1>`), write it HTML-escaped in the report HTML: `&lt;PERSON_1&gt;`. A raw `<PERSON_1>` is parsed by browsers as an unknown tag and renders as nothing. Both restore paths still match the escaped form.
 - Findings are numbered with specific data-backed recommendations.
 
 ---
@@ -183,7 +234,7 @@ function prxCopyDAX(btn) {
 After generating the report, tell the user:
 
 > "This report uses anonymized names (Client_A, Resource_1, etc.) because your data is protected by the anonymization layer. To restore real names, either:
-> 1. **Drag and drop** your `mapping.json` file onto the report page (if the restore button is visible), or
+> 1. **In the browser:** open the report and drag your `mapping.json` onto the yellow restore bar at the top of the page, or click "Load mapping.json" on that bar and pick the file, or
 > 2. **Run the CLI:** `python -m server report.html -o report-real.html`
 >
 > The mapping file is at `~/.powerbi-mcp/sessions/latest/mapping.json`"
@@ -199,6 +250,7 @@ Before saving, verify:
 - [ ] FAQ section has 4-6 items with working accordion
 - [ ] CSS is scoped under `.prx-report`
 - [ ] Copy Query buttons work (prxCopyDAX function included)
+- [ ] Data Restore Bar script included verbatim (yellow bar, drag and drop plus file picker)
 - [ ] File is self-contained (no external dependencies except Google Fonts)
 - [ ] Output is 500+ lines of HTML
 

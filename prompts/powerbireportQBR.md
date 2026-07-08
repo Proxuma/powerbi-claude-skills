@@ -39,6 +39,11 @@ yours.
 The one exception: the **subject company's own name** in the report title and cover is expected
 and fine — the user is presenting to that client. Never expose *other* clients' data.
 
+One formatting rule: if an alias contains angle brackets (Presidio Pass 2 produces aliases like
+`<PERSON_1>`), write it HTML-escaped in the report HTML: `&lt;PERSON_1&gt;`. A raw `<PERSON_1>`
+is parsed by browsers as an unknown tag and renders as nothing. Both restore paths still match
+the escaped form.
+
 ---
 
 ## Step 1 — Styling: default look, or match the customer's brand
@@ -184,8 +189,9 @@ local session mapping and never touches the network:
 python -m server report.html -o report-real.html
 ```
 
-or open the report in a browser and drag `~/.powerbi-mcp/sessions/latest/mapping.json` onto
-the restore button. De-anonymize the PDF source the same way before re-rendering if you need a
+or open the report in a browser and use the yellow restore bar at the top of the page: drag
+`~/.powerbi-mcp/sessions/latest/mapping.json` onto the bar, or click "Load mapping.json" and
+pick the file. De-anonymize the PDF source the same way before re-rendering if you need a
 real-name PDF.
 
 Then open and verify — don't assert it renders correctly without looking:

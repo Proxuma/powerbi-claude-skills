@@ -767,5 +767,50 @@ strong{color:var(--ink);font-weight:600;}
   });
 })();
 </script>
+<script>
+/* === Data Restore (Deanonymization) === */
+(function(){
+var st=document.createElement('style');st.textContent='@media print{#prx-restore-bar{display:none}}';document.head.appendChild(st);
+var bar=document.createElement('div');bar.id='prx-restore-bar';
+bar.innerHTML='<div style="background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:12px 20px;margin:20px auto;max-width:900px;display:flex;align-items:center;gap:12px;font-family:system-ui,sans-serif;font-size:0.85rem;color:#92400e">'
++'<span style="font-weight:600">This report uses anonymized names. Drop mapping.json on this bar, or</span>'
++'<label style="cursor:pointer;background:#d97706;color:white;padding:6px 14px;border-radius:6px;font-weight:600;font-size:0.8rem">'
++'Load mapping.json <input type="file" accept=".json" style="display:none" id="prx-mapping-input">'
++'</label>'
++'<span id="prx-restore-status"></span>'
++'</div>';
+document.body.insertBefore(bar,document.body.firstChild);
+function prxLoadMapping(file){
+if(!file)return;
+var reader=new FileReader();
+reader.onload=function(ev){
+try{
+var data=JSON.parse(ev.target.result);
+var mapping=data.mappings||data;
+var count=prxRestoreNames(mapping);
+document.getElementById('prx-restore-status').textContent=count+' values restored. You can now save or print this page.';
+bar.querySelector('div').style.background='#d1fae5';
+bar.querySelector('div').style.borderColor='#059669';
+bar.querySelector('div').style.color='#065f46';
+}catch(err){document.getElementById('prx-restore-status').textContent='Invalid mapping file.';}
+};reader.readAsText(file);
+}
+document.getElementById('prx-mapping-input').addEventListener('change',function(e){prxLoadMapping(e.target.files[0]);});
+bar.addEventListener('dragover',function(e){e.preventDefault();e.stopPropagation();});
+bar.addEventListener('drop',function(e){e.preventDefault();e.stopPropagation();if(e.dataTransfer&&e.dataTransfer.files.length)prxLoadMapping(e.dataTransfer.files[0]);});
+function prxRestoreNames(mapping){
+var count=0;
+var aliases=Object.keys(mapping).sort(function(a,b){return b.length-a.length;});
+var walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,null,false);
+var nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+nodes.forEach(function(node){
+var text=node.textContent;var changed=false;
+aliases.forEach(function(alias){
+if(text.indexOf(alias)!==-1){
+text=text.split(alias).join(mapping[alias]);changed=true;count++;}
+});if(changed)node.textContent=text;
+});return count;}
+})();
+</script>
 </body>
 </html>
