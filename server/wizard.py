@@ -14,11 +14,13 @@ Usage:
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
 import requests
 
+from server.entity_registry import EntityRegistry
 from server.auth import (
     CACHE_DIR,
     POWERBI_SCOPE,
@@ -154,6 +156,45 @@ def verify_connection(device_code=False):
         return False
 
 
+# Column-name matching happens on a normalized form (snake_case and
+# CamelCase split into words), so company_name, CompanyName and
+# "Company Name" all behave the same. A column only counts as sensitive
+# when it carries a data-bearing token (name, email, ...) — the bare
+# category word is not enough, so company_id and contact_id never flag.
+_PII_TOKENS = ("name", "email", "phone", "address")
+
+_CLIENT_TOKENS = ("company", "account")
+_RESOURCE_TOKENS = ("resource", "technician", "employee")
+_CONTACT_TOKENS = ("contact", "email", "phone", "address")
+_CONTACT_PHRASES = ("first name", "last name", "full name")
+
+
+def _normalize_column_name(name: str) -> str:
+    """Lowercase and split snake_case / CamelCase into space-separated words."""
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name)
+    return re.sub(r"[^a-z0-9]+", " ", spaced.lower()).strip()
+
+
+def classify_column(column_name: str):
+    """Classify a column name as 'client', 'resource', 'contact', or None."""
+    padded = f" {_normalize_column_name(column_name)} "
+
+    def has(token):
+        return f" {token} " in padded
+
+    if not any(has(t) for t in _PII_TOKENS):
+        return None
+    if any(has(t) for t in _CLIENT_TOKENS):
+        return "client"
+    if any(has(t) for t in _RESOURCE_TOKENS):
+        return "resource"
+    if any(has(t) for t in _CONTACT_TOKENS) or any(
+        has(p) for p in _CONTACT_PHRASES
+    ):
+        return "contact"
+    return None
+
+
 def detect_sensitive_columns(workspace_id, dataset_id, device_code=False):
     """Scan schema for likely PII columns and suggest anonymization config."""
     from server.auth import get_fabric_headers
@@ -196,12 +237,6 @@ def detect_sensitive_columns(workspace_id, dataset_id, device_code=False):
             warn("Could not fetch schema for column detection")
             return {}
 
-        import re
-
-        pii_patterns = re.compile(
-            r"\b(Full\s*Name|Company\s*Name|Email|Contact|Phone|Address)\b",
-            re.IGNORECASE,
-        )
         dimension_patterns = re.compile(r"^(BI_|Dim_)", re.IGNORECASE)
 
         candidates = {"client": [], "resource": [], "contact": []}
@@ -226,26 +261,72 @@ def detect_sensitive_columns(workspace_id, dataset_id, device_code=False):
                 col_match = re.match(
                     r"\s*column\s+'?([^']+)'?", line, re.IGNORECASE
                 )
-                if col_match and pii_patterns.search(col_match.group(1)):
-                    col_name = col_match.group(1)
-                    col_ref = f"'{table_name}'[{col_name}]"
-
-                    lower = col_name.lower()
-                    if "company" in lower or "account" in lower:
-                        candidates["client"].append(col_ref)
-                    elif any(
-                        kw in lower
-                        for kw in ("resource", "technician", "employee")
-                    ):
-                        candidates["resource"].append(col_ref)
-                    elif "contact" in lower or "email" in lower:
-                        candidates["contact"].append(col_ref)
+                if not col_match:
+                    continue
+                col_name = col_match.group(1)
+                category = classify_column(col_name)
+                if category:
+                    candidates[category].append(f"'{table_name}'[{col_name}]")
 
         return {k: v for k, v in candidates.items() if v}
 
     except Exception as e:
         warn(f"Column detection failed: {e}")
         return {}
+
+
+def run_anonymization_self_test(candidates, dataset_id=None, device_code=False, dax_executor=None):
+    """Prove the alias registry works before the user relies on it.
+
+    Samples up to 3 distinct values from the first configured column,
+    loads them into an EntityRegistry, and prints each real value next
+    to the alias the AI will see. Returns True when at least one entity
+    mapped; prints a loud warning and returns False otherwise.
+    """
+    if not candidates:
+        print(f"\n{RED}{BOLD}  [FAIL] Anonymization self-test: no sensitive columns configured.{NC}")
+        print(f"{RED}  Real names WILL reach the AI until columns are added in {CONFIG_PATH}.{NC}")
+        return False
+
+    first_category = next(iter(candidates))
+    first_col = candidates[first_category][0]
+
+    if dax_executor is None:
+        def dax_executor(query):
+            resp = requests.post(
+                f"https://api.powerbi.com/v1.0/myorg/datasets/{dataset_id}/executeQueries",
+                headers=get_powerbi_headers(device_code=device_code),
+                json={
+                    "queries": [{"query": query}],
+                    "serializerSettings": {"includeNulls": True},
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    def sampled_executor(query):
+        # Keep the self-test cheap: sample 3 values instead of the full column.
+        match = re.match(r"EVALUATE DISTINCT\((.+)\)$", query)
+        if match:
+            query = f"EVALUATE TOPN(3, DISTINCT({match.group(1)}))"
+        return dax_executor(query)
+
+    registry = EntityRegistry({first_category: [first_col]}, sampled_executor)
+    registry.initialize()
+    for warning in registry.get_warnings():
+        warn(warning)
+
+    mapping = registry.get_mapping()  # alias -> real value
+    if not mapping:
+        print(f"\n{RED}{BOLD}  [FAIL] Anonymization self-test loaded 0 entities from {first_col}.{NC}")
+        print(f"{RED}  Real names WILL reach the AI until this is fixed. Check dataset{NC}")
+        print(f"{RED}  permissions and the sensitive_columns in {CONFIG_PATH}.{NC}")
+        return False
+
+    info(f"Self-test passed: sampled {len(mapping)} value(s) from {first_col}")
+    for alias in sorted(mapping):
+        print(f"    {mapping[alias]}  ->  {alias}")
+    return True
 
 
 def main():
@@ -413,6 +494,14 @@ def main():
             with open(CONFIG_PATH, "w") as f:
                 json.dump(config, f, indent=2)
             info("Anonymization enabled")
+
+            print(f"\n{BOLD}  Running anonymization self-test...{NC}")
+            try:
+                run_anonymization_self_test(
+                    candidates, dataset["id"], device_code=args.device_code
+                )
+            except Exception as e:
+                warn(f"Self-test could not run: {e}")
         else:
             info("Anonymization skipped (can be enabled later in config.json)")
     else:
