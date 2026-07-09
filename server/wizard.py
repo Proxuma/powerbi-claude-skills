@@ -224,6 +224,17 @@ def classify_column(column_name: str):
     return None
 
 
+def table_from_path(path: str):
+    """Extract the table name from a TMDL part path.
+
+    Real getDefinition responses use flat paths like
+    'definition/tables/BI_Companies.tmdl' — there is no trailing slash
+    after the table name, so the pattern must also accept the '.tmdl' end.
+    """
+    match = re.search(r"tables/([^/]+?)(?:\.tmdl$|/)", path)
+    return match.group(1) if match else None
+
+
 def detect_sensitive_columns(workspace_id, dataset_id, device_code=False):
     """Scan schema for likely PII columns and suggest anonymization config."""
     from server.auth import get_fabric_headers
@@ -278,10 +289,9 @@ def detect_sensitive_columns(workspace_id, dataset_id, device_code=False):
                 continue
 
             decoded = base64.b64decode(payload).decode("utf-8", errors="ignore")
-            table_match = re.search(r"tables/([^/]+)/", path)
-            if not table_match:
+            table_name = table_from_path(path)
+            if not table_name:
                 continue
-            table_name = table_match.group(1)
 
             if not dimension_patterns.match(table_name):
                 continue

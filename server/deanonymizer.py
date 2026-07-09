@@ -8,17 +8,35 @@ Three entry points:
 
 import html
 import json
+import re
 from pathlib import Path
+
+# A Presidio-style alias key: <ORGANIZATION_62>, <PERSON_1>, <DATE_TIME_33>
+_PRESIDIO_ALIAS = re.compile(r"^<([A-Z][A-Z_]*_\d+)>$")
 
 
 def deanonymize_text(text: str, mapping: dict[str, str]) -> str:
-    """Replace all aliases with real values. Longest alias first."""
+    """Replace all aliases with real values. Longest alias first.
+
+    Presidio tokens sometimes end up in a report with their angle brackets
+    stripped (ORGANIZATION_62 instead of <ORGANIZATION_62>). A second pass
+    restores those bare tokens too, on word boundaries.
+    """
     if not text or not mapping:
         return text
     sorted_aliases = sorted(mapping.keys(), key=len, reverse=True)
     result = text
     for alias in sorted_aliases:
         result = result.replace(alias, mapping[alias])
+    for alias in sorted_aliases:
+        match = _PRESIDIO_ALIAS.match(alias)
+        if match:
+            real = mapping[alias]
+            result = re.sub(
+                rf"\b{re.escape(match.group(1))}\b",
+                lambda _m: real,
+                result,
+            )
     return result
 
 

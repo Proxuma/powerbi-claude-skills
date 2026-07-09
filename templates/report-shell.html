@@ -390,6 +390,9 @@ var text=node.textContent;var changed=false;
 aliases.forEach(function(alias){
 if(text.indexOf(alias)!==-1){
 text=text.split(alias).join(mapping[alias]);changed=true;count++;}
+var m=alias.match(/^<([A-Z][A-Z_]*_\d+)>$/);
+if(m){var re=new RegExp('\\b'+m[1]+'\\b','g');
+if(re.test(text)){text=text.replace(re,function(){return mapping[alias];});changed=true;count++;}}
 });if(changed)node.textContent=text;
 });return count;}
 })();
