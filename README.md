@@ -136,14 +136,16 @@ from those aliases, and real names are restored locally at the end (see below).
 
 ## Data anonymization
 
-All data is automatically anonymized before it reaches the AI. The AI only sees aliases like Client_A, Resource_1, Contact_3.
+All data is anonymized before it reaches the AI. The AI only ever sees aliases like Client_A, Resource_1, Contact_3.
+
+There is no second AI doing this, and nothing runs in the cloud. The anonymizer *is* the MCP server: a small Python process on your own machine, sitting between Power BI and the AI. On the way out it replaces sensitive names with codenames; on the way back it swaps the real names in. The codebook stays on your disk. Think local find-and-replace proxy, not a model. Numbers are never touched, only names, so the AI still reasons over your real figures.
 
 ### How it works
 
 1. **On first query**, the server loads unique values from your configured sensitive columns via DAX
 2. **Every response** passes through two layers:
    - **Pass 1 (deterministic lookup):** known entities get consistent aliases (fast, auditable)
-   - **Pass 2 (Presidio NLP):** catches unexpected PII in free-text fields. This pass is optional and OFF by default: `pip install -r requirements.txt` does not install it, so on a default install only Pass 1 runs. To turn Pass 2 on, install the packages and the spaCy model:
+   - **Pass 2 (Presidio):** an offline safety net for stray PII in free-text fields. It uses [Microsoft Presidio](https://github.com/microsoft/presidio) with a small local spaCy NER model (~12MB), not an LLM, and it makes no API call. This pass is optional and OFF by default: `pip install -r requirements.txt` does not install it, so on a default install only Pass 1 runs. To turn Pass 2 on, install the packages and the spaCy model:
 
      ```bash
      pip install presidio-analyzer presidio-anonymizer spacy
@@ -154,6 +156,8 @@ All data is automatically anonymized before it reaches the AI. The AI only sees 
 
      Pass 2 masks the entity types listed in `presidio_entities` (person, organisation, email, phone, and other PII). `DATE_TIME` is deliberately **not** in the default set: masking dates turns `MAX(create_date)` into a token and stops the AI from discovering where the data ends. Pass 2 also leaves clear non-PII untouched, so GUIDs, pure numbers and ISO dates, DAX/schema identifiers (e.g. `DIVIDE`, `Hours`, `Ratio`), and priority tiers (`P1-…`) stay readable. Reducing this list only ever removes masking; add an entity type to mask more. Pass 1 (the deterministic registry) is unaffected by this setting.
 3. **After report generation**, restore real names locally
+
+The guarantee is only as strong as your sensitive-column list. Pass 1 masks the columns you flag. If a real name sits in a free-text field you did not flag and Pass 2 is off, it can reach the AI in the clear. That is what Pass 2 is for, and why the wizard auto-detects sensitive columns for you. When in doubt, flag the column or turn Pass 2 on.
 
 ### Restoring real names
 
@@ -298,6 +302,10 @@ python -m pytest tests/ -v
 | Claude Desktop | Supported |
 | Cursor | Supported |
 | ChatGPT (via MCP plugin) | Experimental |
+
+## Built by Proxuma
+
+Built and maintained by [Proxuma](https://proxuma.io) for MSPs running Power BI. It pairs with the Proxuma Power BI product at [proxuma.io/powerbi](https://proxuma.io/powerbi).
 
 ## License
 
