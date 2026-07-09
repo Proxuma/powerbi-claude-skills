@@ -81,6 +81,17 @@ If no website URLs are provided or extraction fails, use the default palette:
 
 For Gantt bar colors, budget bar gradients, and pill badges: use `linear-gradient(135deg, primary, secondary)` with the extracted palette. Semantic colors (green for success, amber for warning, red for danger) stay unchanged.
 
+### Brand names and non-interactive runs
+
+Resolve the MSP and customer **brand names** before generating, in this order:
+1. Arguments passed to the command.
+2. A name given earlier in the conversation, or a configured MSP name.
+3. Auto-extraction from the website `<title>` or logo alt text.
+
+If a brand name is still unknown and the run is interactive, ask once — "What name should appear on the {internal|external} report?" — and do not guess a name.
+
+If the run is **non-interactive** (no way to ask), ship the generic placeholders (`YOUR MSP`, `YOUR COMPANY`, `Your tagline here`) rather than invent a brand — but the final message MUST list **every placeholder that shipped and the file it is in**, e.g. "External report footer still shows `YOUR COMPANY` / `Your tagline here`; internal header still shows `YOUR MSP` — replace before sending." The user must never discover an unfilled placeholder only after handing the report to a customer.
+
 **What stays the same regardless of branding:**
 - Overall layout structure (export bar, header, content sections, footer)
 - Typography system (Montserrat headings, Inter body, from Google Fonts)
@@ -165,6 +176,8 @@ FILTER(
     [Name] = "Project Name Here"
 )
 ```
+
+**Source disambiguation (billable hours and similar):** A project-level field (e.g. `billable_hours` on the Projects row) and an aggregate over the Time Entries table (e.g. `SUM([Billable Hours])`) measure the same thing two ways and can disagree. When a number can come from either source, **state which source the report used, next to the number** — e.g. "234 billable hours (project field)" or "274.75 billable hours (sum of time entries)". Never present one figure as if it were the other, and never silently pick whichever looks better.
 
 ### 3. Generate BOTH Reports
 

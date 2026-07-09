@@ -1,5 +1,9 @@
 import pytest
-from server.anonymizer import Anonymizer
+from server.anonymizer import (
+    Anonymizer,
+    _DEFAULT_PRESIDIO_ENTITIES,
+    _is_presidio_false_positive,
+)
 from server.entity_registry import EntityRegistry
 
 try:
@@ -134,3 +138,75 @@ def test_presidio_still_catches_standalone_person_name():
     anon = Anonymizer(registry=registry, presidio_enabled=True)
     result = anon.anonymize_text("The ticket was assigned to John Smith for resolution")
     assert "John Smith" not in result
+
+
+# ---------------------------------------------------------------------------
+# Pass 2 entity filter (presidio_entities knob) — F5
+# ---------------------------------------------------------------------------
+
+def test_default_entities_exclude_date_time():
+    assert "DATE_TIME" not in _DEFAULT_PRESIDIO_ENTITIES
+    assert "PERSON" in _DEFAULT_PRESIDIO_ENTITIES
+    assert "EMAIL_ADDRESS" in _DEFAULT_PRESIDIO_ENTITIES
+
+
+def test_default_anonymizer_does_not_act_on_date_time():
+    anon = Anonymizer(registry=_make_registry({}), presidio_enabled=True)
+    assert "DATE_TIME" not in anon._presidio_entities
+    assert "ORGANIZATION" in anon._presidio_entities
+
+
+def test_explicit_entity_list_is_honoured_verbatim():
+    anon = Anonymizer(registry=_make_registry({}), presidio_enabled=True,
+                      presidio_entities=["PERSON"])
+    assert anon._presidio_entities == frozenset({"PERSON"})
+
+
+# ---------------------------------------------------------------------------
+# Pass 2 skip-rules for non-PII detections — F5 / F4
+# ---------------------------------------------------------------------------
+
+def test_skip_guid_and_hex_id():
+    assert _is_presidio_false_positive(
+        "550e8400-e29b-41d4-a716-446655440000", "ORGANIZATION")
+    assert _is_presidio_false_positive("ba67bb89", "ORGANIZATION")
+
+
+def test_skip_pure_number_and_iso_date_for_name_entities():
+    assert _is_presidio_false_positive("218", "ORGANIZATION")
+    assert _is_presidio_false_positive("2026-01-21", "ORGANIZATION")
+    assert _is_presidio_false_positive("2026-01-21T10:30:00", "PERSON")
+
+
+def test_numeric_pii_entities_are_not_skipped_when_numeric():
+    # A phone number / card is numeric but IS PII: must stay masked.
+    assert not _is_presidio_false_positive("0612345678", "PHONE_NUMBER")
+    assert not _is_presidio_false_positive("4111111111111111", "CREDIT_CARD")
+
+
+def test_skip_dax_and_schema_keywords():
+    for kw in ("DIVIDE", "Hours", "Ratio", "COUNTX", "SUMMARIZECOLUMNS"):
+        assert _is_presidio_false_positive(kw, "ORGANIZATION"), kw
+
+
+def test_skip_priority_tier_prefix_pattern():
+    for label in ("P1-Kritisch", "P2-Hoog", "P3-Medium", "P4-Laag"):
+        assert _is_presidio_false_positive(label, "ORGANIZATION"), label
+
+
+def test_real_pii_is_not_a_false_positive():
+    assert not _is_presidio_false_positive("John Smith", "PERSON")
+    assert not _is_presidio_false_positive("Wu-Jackson Holding", "ORGANIZATION")
+    assert not _is_presidio_false_positive("Project Phoenix", "ORGANIZATION")
+
+
+@pytest.mark.skipif(not HAS_PRESIDIO, reason="presidio not installed")
+def test_presidio_leaves_dates_and_guids_but_masks_person():
+    anon = Anonymizer(registry=_make_registry({}), presidio_enabled=True)
+    result = anon.anonymize_text(
+        "John Smith opened ticket 550e8400-e29b-41d4-a716-446655440000 "
+        "on 2026-01-15 using DIVIDE in a measure")
+    assert "550e8400-e29b-41d4-a716-446655440000" in result  # GUID untouched
+    assert "2026-01-15" in result                             # date untouched
+    assert "DIVIDE" in result                                 # DAX keyword untouched
+    assert "John Smith" not in result                         # real PII masked

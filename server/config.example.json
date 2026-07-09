@@ -13,6 +13,12 @@
       "contact": []
     },
     "presidio_enabled": true,
+    "presidio_entities": [
+      "PERSON", "ORGANIZATION", "EMAIL_ADDRESS", "PHONE_NUMBER", "LOCATION",
+      "NRP", "CREDIT_CARD", "IBAN_CODE", "US_SSN", "US_BANK_NUMBER",
+      "US_DRIVER_LICENSE", "US_PASSPORT", "IP_ADDRESS", "CRYPTO",
+      "MEDICAL_LICENSE", "URL"
+    ],
     "session_retention_days": 90,
     "encrypt_mappings": false
   }

@@ -18,7 +18,8 @@ PRESIDIO_INSTALL_HINT = (
 )
 
 # Non-PII values that Presidio incorrectly flags.
-# Months, days, priority levels (EN + NL), status names, common business terms.
+# Months, days, priority levels (EN + NL), status names, common business terms,
+# and DAX / schema identifiers that Presidio's NER reads as organisations.
 _PRESIDIO_ALLOWLIST = {
     # English months
     "january", "february", "march", "april", "may", "june",
@@ -35,7 +36,69 @@ _PRESIDIO_ALLOWLIST = {
     # Common business terms Presidio misflags
     "ticket", "contract", "project", "service", "support",
     "backup", "patch", "alert", "device", "endpoint",
+    # Schema / measure words the E2E saw masked as <ORGANIZATION_x>
+    "hours", "ratio", "sla", "count", "sum", "total", "average", "avg",
+    "snapshot", "queue", "queues", "resource", "resources", "capacity",
+    # DAX function names (Presidio NER tags these as organisations)
+    "divide", "calculate", "filter", "sumx", "countx", "countrows",
+    "distinctcount", "averagex", "maxx", "minx", "rankx", "topn", "related",
+    "summarize", "summarizecolumns", "addcolumns", "selectedvalue",
+    "isblank", "switch", "values", "allexcept", "dateadd", "datesytd",
+    "totalytd", "earlier", "coalesce", "format", "concatenate", "concatenatex",
 }
+
+# Entity types Pass 2 (Presidio) masks by default. Notably EXCLUDES DATE_TIME:
+# masking dates broke data-end discovery in the E2E (MAX(create_date) returned a
+# token). Override per install with anonymization.presidio_entities in config.
+_DEFAULT_PRESIDIO_ENTITIES = (
+    "PERSON", "ORGANIZATION", "EMAIL_ADDRESS", "PHONE_NUMBER", "LOCATION",
+    "NRP", "CREDIT_CARD", "IBAN_CODE", "US_SSN", "US_BANK_NUMBER",
+    "US_DRIVER_LICENSE", "US_PASSPORT", "IP_ADDRESS", "CRYPTO",
+    "MEDICAL_LICENSE", "URL",
+)
+
+# Entity types whose value is meant to be numeric; a pure-number detection here
+# is real PII (a phone, a card), so the numeric skip-rule must not touch them.
+_NUMERIC_PII_ENTITIES = frozenset({
+    "PHONE_NUMBER", "CREDIT_CARD", "IBAN_CODE", "US_SSN", "US_BANK_NUMBER",
+    "IP_ADDRESS", "CRYPTO",
+})
+
+# A full GUID (8-4-4-4-12) or a bare hex id fragment: never PII. The hex
+# fragment must contain at least one a-f letter, so a plain number (e.g. a phone
+# number of only digits) is left to the numeric rule, which respects PII types.
+_GUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+_HEX_ID_RE = re.compile(r"^(?=[0-9a-f]*[a-f])[0-9a-f]{8,}$", re.I)
+
+# A pure number or an ISO date/datetime: digits with only separators around them.
+_NUMERIC_OR_DATE_RE = re.compile(r"^\d[\dT.,:/ \-]*$")
+
+# Categorical labels recognisable by shape, so we do not hardcode every Dutch
+# variant. ^P[1-4] covers priority tiers (P1-Kritisch, P2-Hoog, P3-Medium, ...).
+_PRESIDIO_SKIP_PATTERNS = (
+    re.compile(r"^P[1-4]\b", re.I),
+)
+
+
+def _is_presidio_false_positive(text: str, entity_type: str) -> bool:
+    """True if a Pass 2 detection is clearly not PII and should not be aliased.
+
+    Reduces over-masking in the safe direction only: GUIDs/hex ids, pure
+    numbers and ISO dates (except for entities that are legitimately numeric,
+    like phone numbers), DAX/schema keywords, and shape-matched categorical
+    labels. When in doubt this returns False and the value stays masked.
+    """
+    s = text.strip()
+    if not s:
+        return True
+    if s.lower() in _PRESIDIO_ALLOWLIST:
+        return True
+    if _GUID_RE.match(s) or _HEX_ID_RE.match(s):
+        return True
+    if entity_type not in _NUMERIC_PII_ENTITIES and _NUMERIC_OR_DATE_RE.match(s):
+        return True
+    return any(p.match(s) for p in _PRESIDIO_SKIP_PATTERNS)
 
 
 # Aliases produced by Pass 1 (registry) and Pass 2 (Presidio tokens like <PERSON_1>).
@@ -84,10 +147,16 @@ class Anonymizer:
         registry: EntityRegistry,
         presidio_enabled: bool = True,
         enabled: bool = True,
+        presidio_entities: Optional[list[str]] = None,
     ):
         self._registry = registry
         self._presidio_enabled = presidio_enabled
         self._enabled = enabled
+        # Entity types Pass 2 acts on. None -> the default set (excludes
+        # DATE_TIME). An explicit list from config overrides it verbatim.
+        self._presidio_entities = frozenset(
+            _DEFAULT_PRESIDIO_ENTITIES if presidio_entities is None
+            else presidio_entities)
         self._presidio_mapping: dict[str, str] = {}   # alias -> real value
         self._presidio_counter: dict[str, int] = {}    # entity_type -> counter
         self._analyzer = None
@@ -244,12 +313,18 @@ class Anonymizer:
         for detection in results:
             original = text[detection.start:detection.end]
 
+            # Only act on the configured entity types (DATE_TIME excluded by
+            # default so dates stay readable for data-end discovery).
+            if detection.entity_type not in self._presidio_entities:
+                continue
+
             # Skip values already replaced by Pass 1
             if self._is_already_aliased(original):
                 continue
 
-            # Skip known non-PII values (months, priorities, etc.)
-            if original.strip().lower() in _PRESIDIO_ALLOWLIST:
+            # Skip clear non-PII: allowlist, GUIDs, pure numbers/dates, DAX
+            # keywords, and shape-matched categorical labels.
+            if _is_presidio_false_positive(original, detection.entity_type):
                 continue
 
             # Reuse existing alias for the same detected value

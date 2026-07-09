@@ -151,6 +151,8 @@ All data is automatically anonymized before it reaches the AI. The AI only sees 
      ```
 
      The server warns on startup when Pass 2 is configured but not installed, and the `anonymization_status` tool shows whether Pass 2 is ACTIVE or INACTIVE.
+
+     Pass 2 masks the entity types listed in `presidio_entities` (person, organisation, email, phone, and other PII). `DATE_TIME` is deliberately **not** in the default set: masking dates turns `MAX(create_date)` into a token and stops the AI from discovering where the data ends. Pass 2 also leaves clear non-PII untouched — GUIDs, pure numbers and ISO dates, DAX/schema identifiers (e.g. `DIVIDE`, `Hours`, `Ratio`), and priority tiers (`P1-…`) — so those stay readable. Reducing this list only ever removes masking; add an entity type to mask more. Pass 1 (the deterministic registry) is unaffected by this setting.
 3. **After report generation**, restore real names locally
 
 ### Restoring real names
@@ -175,10 +177,16 @@ The wizard (option 4) auto-detects sensitive columns. Or edit `~/.powerbi-mcp/co
       "resource": ["'Resource'[FullName]"],
       "contact": ["'Contact'[ContactName]"]
     },
-    "presidio_enabled": true
+    "presidio_enabled": true,
+    "presidio_entities": [
+      "PERSON", "ORGANIZATION", "EMAIL_ADDRESS", "PHONE_NUMBER", "LOCATION",
+      "NRP", "CREDIT_CARD", "IBAN_CODE", "US_SSN", "IP_ADDRESS", "URL"
+    ]
   }
 }
 ```
+
+`presidio_entities` is optional; omit it to use the default set. It excludes `DATE_TIME` on purpose (see above). Add or remove entity types to control what Pass 2 masks.
 
 ### Audit trail
 
