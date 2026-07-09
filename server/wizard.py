@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+import base64
 import json
 import re
 import sys
@@ -224,6 +225,43 @@ def classify_column(column_name: str):
     return None
 
 
+# Columns that carry identifiers but are never auto-anonymized. The wizard
+# only WARNS about these; it does not add them to sensitive_columns. Free-text
+# columns are screened only when Presidio (Pass 2) is installed; descriptive
+# columns (role, sector, ...) are never masked and can re-identify a client
+# even when the names beside them are aliased. Matching is on the same
+# normalized form as classify_column.
+_FREE_TEXT_TOKENS = (
+    "description", "desc", "note", "notes", "comment", "summary",
+    "subject", "title", "body", "detail", "details", "resolution",
+)
+_DESCRIPTIVE_TOKENS = (
+    "role", "specialty", "speciality", "jobtitle",
+    "department", "sector", "industry",
+)
+_DESCRIPTIVE_PHRASES = ("job title",)
+
+
+def classify_unprotected_column(column_name: str):
+    """Classify a column the anonymizer will NOT auto-mask.
+
+    Returns 'free_text', 'descriptive', or None. Descriptive is checked first
+    so job_title reads as descriptive rather than as free-text 'title'.
+    """
+    padded = f" {_normalize_column_name(column_name)} "
+
+    def has(token):
+        return f" {token} " in padded
+
+    if any(has(t) for t in _DESCRIPTIVE_TOKENS) or any(
+        p in padded for p in _DESCRIPTIVE_PHRASES
+    ):
+        return "descriptive"
+    if any(has(t) for t in _FREE_TEXT_TOKENS):
+        return "free_text"
+    return None
+
+
 def table_from_path(path: str):
     """Extract the table name from a TMDL part path.
 
@@ -235,13 +273,15 @@ def table_from_path(path: str):
     return match.group(1) if match else None
 
 
-def detect_sensitive_columns(workspace_id, dataset_id, device_code=False):
-    """Scan schema for likely PII columns and suggest anonymization config."""
-    from server.auth import get_fabric_headers
-    import base64
-    import time
+def fetch_schema_definition(workspace_id, dataset_id, device_code=False):
+    """Fetch and return the TMDL semantic-model definition, or None on failure.
 
-    print(f"\n{BOLD}  Scanning for sensitive columns...{NC}")
+    getDefinition may answer 202 with a long-running operation; poll until it
+    succeeds, then read the result. The sensitive-column scan and the
+    unprotected-column scan both read this same definition.
+    """
+    from server.auth import get_fabric_headers
+    import time
 
     try:
         response = requests.post(
@@ -249,7 +289,6 @@ def detect_sensitive_columns(workspace_id, dataset_id, device_code=False):
             headers=get_fabric_headers(device_code=device_code),
         )
 
-        schema_data = None
         if response.status_code == 202:
             location = response.headers.get("Location")
             if location:
@@ -267,51 +306,123 @@ def detect_sensitive_columns(workspace_id, dataset_id, device_code=False):
                                 headers=get_fabric_headers(device_code=device_code),
                             )
                             if result_response.ok:
-                                schema_data = result_response.json()
-                                break
-        else:
-            response.raise_for_status()
-            schema_data = response.json()
-
-        if not schema_data:
+                                return result_response.json()
             warn("Could not fetch schema for column detection")
-            return {}
+            return None
 
-        dimension_patterns = re.compile(r"^(BI_|Dim_)", re.IGNORECASE)
-
-        candidates = {"client": [], "resource": [], "contact": []}
-        parts = schema_data.get("definition", {}).get("parts", [])
-
-        for part in parts:
-            payload = part.get("payload", "")
-            path = part.get("path", "")
-            if part.get("payloadType") != "InlineBase64" or not payload:
-                continue
-
-            decoded = base64.b64decode(payload).decode("utf-8", errors="ignore")
-            table_name = table_from_path(path)
-            if not table_name:
-                continue
-
-            if not dimension_patterns.match(table_name):
-                continue
-
-            for line in decoded.split("\n"):
-                col_match = re.match(
-                    r"\s*column\s+'?([^']+)'?", line, re.IGNORECASE
-                )
-                if not col_match:
-                    continue
-                col_name = col_match.group(1)
-                category = classify_column(col_name)
-                if category:
-                    candidates[category].append(f"'{table_name}'[{col_name}]")
-
-        return {k: v for k, v in candidates.items() if v}
+        response.raise_for_status()
+        return response.json()
 
     except Exception as e:
-        warn(f"Column detection failed: {e}")
-        return {}
+        warn(f"Schema fetch failed: {e}")
+        return None
+
+
+def _iter_schema_columns(schema_data):
+    """Yield (table_name, column_name) for every column in the definition."""
+    parts = (schema_data or {}).get("definition", {}).get("parts", [])
+    for part in parts:
+        payload = part.get("payload", "")
+        path = part.get("path", "")
+        if part.get("payloadType") != "InlineBase64" or not payload:
+            continue
+
+        decoded = base64.b64decode(payload).decode("utf-8", errors="ignore")
+        table_name = table_from_path(path)
+        if not table_name:
+            continue
+
+        for line in decoded.split("\n"):
+            col_match = re.match(r"\s*column\s+'?([^']+)'?", line, re.IGNORECASE)
+            if col_match:
+                yield table_name, col_match.group(1)
+
+
+def detect_sensitive_columns(schema_data):
+    """Scan the definition for likely PII columns in dimension tables."""
+    dimension_patterns = re.compile(r"^(BI_|Dim_)", re.IGNORECASE)
+    candidates = {"client": [], "resource": [], "contact": []}
+
+    for table_name, col_name in _iter_schema_columns(schema_data):
+        if not dimension_patterns.match(table_name):
+            continue
+        category = classify_column(col_name)
+        if category:
+            candidates[category].append(f"'{table_name}'[{col_name}]")
+
+    return {k: v for k, v in candidates.items() if v}
+
+
+def detect_unprotected_columns(schema_data):
+    """Scan the WHOLE model for columns that carry identifiers but are never
+    auto-anonymized: free-text and descriptive / re-identifying columns.
+
+    Unlike detect_sensitive_columns this looks at every table, not just the
+    dimension tables, because free-text and role/sector columns live on the
+    fact tables (tickets, tasks, time entries).
+    """
+    found = {"free_text": [], "descriptive": []}
+
+    for table_name, col_name in _iter_schema_columns(schema_data):
+        family = classify_unprotected_column(col_name)
+        if family:
+            found[family].append(f"'{table_name}'[{col_name}]")
+
+    return {k: v for k, v in found.items() if v}
+
+
+def warn_unprotected_columns(unprotected):
+    """Warn (loudly, warn-only) about columns the anonymizer never auto-masks.
+
+    Pass 1 masks the VALUES of the columns you configure. Free-text and
+    descriptive columns fall outside that scope: their own content ships to
+    the AI verbatim (free-text is screened only when Presidio / Pass 2 is
+    installed). Nothing is added to sensitive_columns here; the user decides.
+    Returns True when a warning was printed, False when there was nothing to
+    warn about.
+    """
+    free_text = unprotected.get("free_text") or []
+    descriptive = unprotected.get("descriptive") or []
+    if not free_text and not descriptive:
+        return False
+
+    print()
+    warn("Some columns are NOT auto-anonymized and may carry identifying or")
+    warn("re-identifying information. Review them and add any that matter to")
+    warn("sensitive_columns by hand. They are not added for you.")
+    if free_text:
+        print(f"  {BOLD}free-text (only screened when Presidio / Pass 2 is installed):{NC}")
+        for col in free_text:
+            print(f"    - {col}")
+    if descriptive:
+        print(f"  {BOLD}descriptive / re-identifying (never auto-masked, even with Presidio):{NC}")
+        for col in descriptive:
+            print(f"    - {col}")
+    return True
+
+
+def presidio_setup_notice():
+    """Say at setup time whether Pass 2 (Presidio) will run.
+
+    anonymization_status reports this at runtime; surface it here so the user
+    learns before their first query whether free-text and reformatted names
+    get the extra NER screen. Returns True when Presidio imports.
+    """
+    try:
+        import presidio_analyzer  # noqa: F401
+        installed = True
+    except Exception:
+        installed = False
+
+    if installed:
+        info("Pass 2 (Presidio) available: free-text and reformatted names will also be screened")
+    else:
+        warn("Pass 2 (Presidio) NOT installed: only your configured columns are")
+        warn("protected. Free-text columns are NOT screened, and reformatted names")
+        warn("(line-wrapped, hyphenated, or in emails/hostnames) can leak. Install:")
+        warn("  pip install presidio-analyzer presidio-anonymizer spacy")
+        warn("  python -m spacy download en_core_web_sm")
+    return installed
 
 
 def run_anonymization_self_test(candidates, dataset_id=None, device_code=False, dax_executor=None):
@@ -507,11 +618,15 @@ def main():
 
     # Anonymization setup
     print(f"\n{BOLD}  Data Anonymization Setup{NC}")
-    print(f"  (Prevents real data from reaching AI servers)\n")
+    print(f"  (Reduces the real data that reaches AI servers)\n")
 
-    candidates = detect_sensitive_columns(
+    presidio_setup_notice()
+
+    print(f"\n{BOLD}  Scanning for sensitive columns...{NC}")
+    schema_data = fetch_schema_definition(
         workspace["id"], dataset["id"], device_code=args.device_code
     )
+    candidates = detect_sensitive_columns(schema_data)
 
     if candidates:
         print(f"  Found {sum(len(v) for v in candidates.values())} likely sensitive columns:\n")
@@ -549,6 +664,8 @@ def main():
     else:
         warn("No sensitive columns auto-detected")
         print(f"  You can manually configure anonymization in {CONFIG_PATH}")
+
+    warn_unprotected_columns(detect_unprotected_columns(schema_data))
 
     # Verify
     print()
