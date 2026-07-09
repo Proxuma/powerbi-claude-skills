@@ -229,3 +229,174 @@ def test_live_executor_runs_trivial_query():
     executor = verify_report.make_live_executor(dataset_id)
     response = executor('EVALUATE ROW("n", 1+1)')
     assert verify_report.collect_returned_values(response) == [2.0]
+
+
+# ---------------------------------------------------------------------------
+# dax-query family (projectreport) — new extractor path
+# ---------------------------------------------------------------------------
+
+DAXQUERY_HTML = """
+<div class="section-label"><span>DAX Queries - Data Verification</span></div>
+<div class="dax-query">
+  <div class="dax-header" onclick="this.parentElement.classList.toggle('expanded')">
+    <span class="dax-title">1. Project Details</span>
+    <span class="dax-toggle-icon">&#9660;</span>
+  </div>
+  <div class="dax-content">
+    <pre><code>EVALUATE FILTER('BI_Autotask_Projects', 'BI_Autotask_Projects'[project_id] = 8)</code></pre>
+    <button class="copy-btn">Copy Query</button>
+  </div>
+</div>
+<div class="dax-query">
+  <div class="dax-header">
+    <span class="dax-title">2. Phase Summary</span>
+    <span class="dax-toggle-icon">&#9660;</span>
+  </div>
+  <div class="dax-content">
+    <pre><code>EVALUATE SUMMARIZECOLUMNS('Tasks'[phase], "Worked", SUM('Tasks'[worked_hours]))</code></pre>
+  </div>
+</div>
+"""
+
+
+def test_dax_query_family_extracted():
+    panels = verify_report.extract_panels(DAXQUERY_HTML)
+    assert [p["family"] for p in panels] == ["dax-query", "dax-query"]
+    assert panels[0]["section"] == "1. Project Details"
+    assert panels[1]["section"] == "2. Phase Summary"
+    assert panels[0]["query"].startswith("EVALUATE FILTER('BI_Autotask_Projects'")
+
+
+def test_dax_query_without_result_is_execute_only():
+    panels = verify_report.extract_panels(DAXQUERY_HTML)
+    assert all(p["expected"] == [] for p in panels)
+    results = verify_report.verify_panels(panels, lambda q: _response(8))
+    assert all(r["status"] == "PASS" for r in results)
+    assert all(r["value_checked"] is False for r in results)
+
+
+# ---------------------------------------------------------------------------
+# Multi-EVALUATE splitting (QBR proof panels)
+# ---------------------------------------------------------------------------
+
+MULTI_EVALUATE_HTML = """
+<section data-screen-label="Service delivery">
+  <details class="dax-proof"><summary>DAX</summary><pre>
+// tickets by type
+EVALUATE SUMMARIZECOLUMNS('Tickets'[type], "n", COUNTROWS('Tickets'))
+-- Result: Incident 953; Change 103; Problem 2 (total 1058)
+
+// contracts on file
+EVALUATE ROW("Total", 6, "Active", 5)
+-- Result: TotalContracts = 6; ActiveContracts = 5
+  </pre></details>
+</section>
+"""
+
+
+def test_multi_evaluate_panel_splits_into_statements():
+    panels = verify_report.extract_panels(MULTI_EVALUATE_HTML)
+    assert len(panels) == 2
+    assert panels[0]["section"] == "Service delivery (1/2)"
+    assert panels[1]["section"] == "Service delivery (2/2)"
+    # Each statement carries only its own EVALUATE.
+    assert panels[0]["query"].count("EVALUATE") == 1
+    assert panels[1]["query"].count("EVALUATE") == 1
+    assert "SUMMARIZECOLUMNS" in panels[0]["query"]
+    assert '"Total", 6' in panels[1]["query"]
+
+
+def test_split_dax_statements_direct():
+    text = ('// c1\nEVALUATE ROW("a", 1)\n-- Result: a = 1\n'
+            'EVALUATE ROW("b", 2)\n-- Result: b = 2')
+    parts = verify_report.split_dax_statements(text)
+    assert len(parts) == 2
+    assert "ROW(\"a\", 1)" in parts[0]
+    assert "ROW(\"b\", 2)" in parts[1]
+
+
+def test_split_keeps_define_with_its_evaluate():
+    text = ('DEFINE VAR x = 1\nEVALUATE ROW("a", x)\n'
+            'EVALUATE ROW("b", 2)')
+    parts = verify_report.split_dax_statements(text)
+    assert len(parts) == 2
+    assert parts[0].strip().startswith("DEFINE")
+    assert "ROW(\"a\", x)" in parts[0]
+    assert parts[1].strip().startswith("EVALUATE")
+
+
+def test_single_statement_not_split():
+    text = 'EVALUATE ROW("a", 1)\n-- Result: a = 1'
+    assert verify_report.split_dax_statements(text) == [text]
+
+
+# ---------------------------------------------------------------------------
+# Number parsing: digits in words, product names, calendar labels
+# ---------------------------------------------------------------------------
+
+def test_digits_glued_to_letters_are_not_numbers():
+    # "M365" abbreviation and "Q2"/"P4" tier codes are not the numbers 365/2/4,
+    # and the digit after the rejected letter does not start a fresh match.
+    assert verify_report.parse_numbers("no per-company M365 data (0)") == [(0.0, 0, False)]
+    assert verify_report.parse_numbers("Q2 2026 created = 305") == [(305.0, 0, False)]
+    assert verify_report.parse_numbers("tier P4 volume = 14") == [(14.0, 0, False)]
+
+
+def test_microsoft_365_product_name_is_not_a_number():
+    assert verify_report.parse_numbers("Microsoft 365") == []
+    assert verify_report.parse_numbers("Microsoft 365 seats = 42") == [(42.0, 0, False)]
+    assert verify_report.parse_numbers("Office 365 users: 5") == [(5.0, 0, False)]
+
+
+def test_calendar_labels_are_not_numbers():
+    assert verify_report.parse_numbers("last create date = 21 Jan 2026") == []
+    assert verify_report.parse_numbers("window Aug 2025 to Jan 2026") == []
+    assert verify_report.parse_numbers("since 2025 the count = 100") == [(100.0, 0, False)]
+    assert verify_report.parse_numbers("iso 2026-01-21 total 7") == [(7.0, 0, False)]
+
+
+# ---------------------------------------------------------------------------
+# Derived values: null-as-zero, column totals, complements, percentages
+# ---------------------------------------------------------------------------
+
+def test_null_cells_count_as_zero():
+    response = {"results": [{"tables": [{"rows": [{"[x]": None, "[y]": 5}]}]}]}
+    assert verify_report.collect_returned_values(response) == [0.0, 5.0]
+
+
+def test_collect_derived_column_total_and_complement():
+    # A single column over several rows: its total is derivable.
+    total = {"results": [{"tables": [{"rows": [
+        {"[n]": 953}, {"[n]": 103}, {"[n]": 2}]}]}]}
+    assert 1058.0 in verify_report.collect_derived_values(total)
+    # Two column totals: their difference (a complement) is derivable.
+    two = {"results": [{"tables": [{"rows": [{"[Total]": 218, "[Managed]": 166}]}]}]}
+    derived = verify_report.collect_derived_values(two)
+    assert 52.0 in derived and 218.0 in derived and 166.0 in derived
+
+
+def test_derived_percentage_and_complement_do_not_fail_panel():
+    html = ('<section data-screen-label="Cyber">'
+            '<details class="dax-proof"><pre>'
+            'EVALUATE ROW("TotalAssets", 218, "RMM_managed", 166)\n'
+            '-- Result: TotalAssets = 218; RMM_managed = 166 (76%); unmanaged = 52'
+            '</pre></details></section>')
+    panels = verify_report.extract_panels(html)
+    results = verify_report.verify_panels(
+        panels, lambda q: {"results": [{"tables": [{"rows": [
+            {"[TotalAssets]": 218, "[RMM_managed]": 166}]}]}]})
+    r = results[0]
+    assert r["status"] == "PASS"
+    assert set(r["derived"]) == {"76%", "52"}
+    assert r["value_checked"] is True
+
+
+def test_plain_unmatched_number_still_fails():
+    # A non-percent, non-derivable value the query should have returned but did
+    # not is a real mismatch, not softened away.
+    html = ('<details class="dax-proof"><pre>EVALUATE ROW("avg", 1)\n'
+            '-- Result: avg = 4.7</pre></details>')
+    panels = verify_report.extract_panels(html)
+    results = verify_report.verify_panels(panels, lambda q: _response(9.9))
+    assert results[0]["status"] == "FAIL"
+    assert "4.7" in results[0]["detail"]
