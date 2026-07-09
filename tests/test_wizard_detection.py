@@ -134,3 +134,101 @@ from server.wizard import table_from_path
 ])
 def test_table_from_path(path, expected):
     assert table_from_path(path) == expected
+
+
+# --- Unprotected-column warn pass ------------------------------------------
+# A second, warn-only scan flags columns that carry identifying or
+# re-identifying information but are NEVER auto-anonymized: free-text fields
+# (only screened when Presidio/Pass 2 is installed) and descriptive columns
+# (role/sector/title, never masked). classify_unprotected_column does not add
+# anything to sensitive_columns; it only surfaces columns the user must review.
+
+from server.wizard import (
+    classify_unprotected_column,
+    warn_unprotected_columns,
+)
+
+
+# Free-text columns that must be flagged as 'free_text'.
+FREE_TEXT_COLUMNS = [
+    "description",
+    "contract_description",
+    "desc",
+    "note",
+    "internal_notes",
+    "summary_notes",
+    "comment",
+    "summary",
+    "subject",
+    "ticket_title",
+    "title",
+    "body",
+    "detail",
+    "resolution_details",
+    "resolution",
+]
+
+# Descriptive / re-identifying columns that must be flagged as 'descriptive'.
+DESCRIPTIVE_COLUMNS = [
+    "role_name",
+    "role",
+    "specialty",
+    "speciality",
+    "job_title",
+    "jobtitle",
+    "department",
+    "sector",
+    "industry",
+]
+
+# Columns the warn pass must stay silent on: ids, metrics, and the
+# name/email/phone columns already handled by classify_column.
+UNPROTECTED_NONE_COLUMNS = [
+    "company_id",
+    "resource_id",
+    "ticket_number",
+    "created_date",
+    "revenue",
+    "hours",
+    "company_name",
+    "first_name",
+    "email_address",
+    "primary_contact_name",
+    "status_name",
+    "queue_name",
+]
+
+
+@pytest.mark.parametrize("column", FREE_TEXT_COLUMNS)
+def test_free_text_columns_flagged(column):
+    assert classify_unprotected_column(column) == "free_text"
+
+
+@pytest.mark.parametrize("column", DESCRIPTIVE_COLUMNS)
+def test_descriptive_columns_flagged(column):
+    assert classify_unprotected_column(column) == "descriptive"
+
+
+@pytest.mark.parametrize("column", UNPROTECTED_NONE_COLUMNS)
+def test_unprotected_pass_ignores_ids_metrics_and_sensitive(column):
+    assert classify_unprotected_column(column) is None
+
+
+def test_warn_pass_prints_when_columns_present(capsys):
+    printed = warn_unprotected_columns({
+        "free_text": ["'Tickets'[description]"],
+        "descriptive": ["'Resources'[role_name]"],
+    })
+    assert printed is True
+    out = capsys.readouterr().out
+    assert "'Tickets'[description]" in out
+    assert "'Resources'[role_name]" in out
+    assert "NOT auto-anonymized" in out
+    assert "Presidio" in out
+    assert "sensitive_columns" in out
+
+
+def test_warn_pass_silent_when_no_columns(capsys):
+    printed = warn_unprotected_columns({})
+    assert printed is False
+    assert capsys.readouterr().out == ""

@@ -196,6 +196,46 @@ The wizard (option 4) auto-detects sensitive columns. Or edit `~/.powerbi-mcp/co
 
 Every session stores its mapping at `~/.powerbi-mcp/sessions/<id>/mapping.json`. This file never leaves your machine. Use it to verify what was anonymized and provide compliance documentation.
 
+## Data protection: scope and limits
+
+The anonymizer reduces what reaches the AI. It does not guarantee zero exposure. The protection boundary is the columns you configure plus, if installed, Presidio's name-detection categories. Identifying information that lives outside both can still reach the AI. Read this before you share a report externally.
+
+We tested this with an adversarial run against a real model. The masker itself is correct: on the columns you configure, it does not leak. The gap is scope, not a broken masker. What follows is the verified boundary.
+
+### What is protected
+
+Pass 1 (the default, always on) protects every value in a column you have configured as sensitive. It catches that value in its exact form, in case variants, and in possessive form (`Acme's`), and it does so wherever the value appears in the output, even when the value sits inside a column you did not configure. The match is value-based, not column-based: a configured client name is aliased anywhere it turns up, including embedded in free text.
+
+### What is not protected
+
+Pass 1 does **not** protect:
+
+- **Reformatted versions of a configured name.** If a name is line-wrapped, hyphenated, embedded as a fragment in a hostname or asset tag, or used as the local part of an email address, Pass 1 does not recognise it and it can reach the AI in the clear. Pass 1 matches the exact registered form only.
+- **The own content of columns you did not configure.** A free-text column (ticket or task titles, notes, descriptions, resolutions) or a descriptive column (role, specialty, department, sector) ships its own text to the AI verbatim. On a real tenant these fields routinely carry client identifiers.
+
+### What Presidio (Pass 2) adds
+
+Pass 2 is an **optional extra install** (see the Data anonymization section above). It is off on a default `pip install -r requirements.txt`. When installed, it recovers most of the reformatted names Pass 1 misses using an offline name-detection model:
+
+- line-wrapped names: roughly three quarters caught
+- hyphenated names: roughly seven in eight caught
+- names inside email addresses: effectively all caught
+- client abbreviations embedded in hostnames or asset tags: only about four in ten caught, so most of these still leak
+
+Pass 2 adds nothing for descriptive or sector content, because a job title or specialty is not a name. On a default install (no Presidio), only Pass 1 runs, so only the exact configured values are protected and every reformatted version of a name leaks.
+
+### Residual risk (neither pass catches these)
+
+1. **Indirect re-identification through descriptive columns.** A column like role or specialty (for example "Audiological scientist") is never masked, and it can reveal the client's sector even while the names beside it are aliased. This survives a full install with Presidio on.
+2. **Client abbreviations inside hostnames and asset tags.** A short form of a client name embedded in a device name leaks fully on a default install and mostly even with Presidio.
+3. **The own free-text content of columns you did not configure.** Ticket and task titles, notes, and project or contract codenames pass through as written. On a real tenant these carry client identifiers directly.
+
+### What you must do
+
+- **Configure every column that carries an identifier**, not just the obvious name columns. The configured list is the protection boundary. Anything outside it is published as written. That includes descriptive columns (role, department, sector) and free-text columns, not only company and contact names.
+- **Install Presidio if your reports touch free text.** The default install does not include it. Add it with `pip install presidio-analyzer presidio-anonymizer spacy` and `python -m spacy download en_core_web_sm`, then set `presidio_enabled: true`.
+- **Review a report before you share it externally.** The tool reduces exposure; it does not guarantee that nothing identifying remains. Read the anonymized output and confirm it is safe for its audience.
+
 ## MCP tools
 
 Once the server is running, your AI assistant has access to:
