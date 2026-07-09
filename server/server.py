@@ -119,6 +119,7 @@ def _init_anonymizer():
     _anonymizer_instance = Anonymizer(
         registry=registry,
         presidio_enabled=anon_config.get("presidio_enabled", True),
+        presidio_entities=anon_config.get("presidio_entities"),
     )
 
     # Config says Pass 2 is on but the packages are not importable: warn once,
