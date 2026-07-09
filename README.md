@@ -1,8 +1,8 @@
 # Proxuma Power BI Skills
 
-AI prompt files and MCP server for generating reports and dashboards from your Power BI data. Works with Claude Code, GitHub Copilot, Cursor, and any MCP-compatible AI tool.
+Ask your Power BI data a question in plain language, get back a complete standalone HTML report with real numbers. Prompt files plus an MCP server that connect your own AI assistant to your Power BI and Fabric data. Works with Claude Code, GitHub Copilot, Cursor, and any MCP-compatible AI tool.
 
-You ask a business question. The AI queries your data model, anonymizes it, and generates a complete HTML report or dashboard builder with real numbers. Your data never reaches the AI in readable form.
+Built for MSPs on the Proxuma Power BI product who want to query their own tenant with their own AI. You ask a business question. The AI queries your data model, anonymizes it, and builds the report from real figures. Client names, staff, and contacts are swapped for aliases before anything leaves for the AI, so your data never reaches the AI in readable form.
 
 ## What's included
 
@@ -10,7 +10,7 @@ You ask a business question. The AI queries your data model, anonymizes it, and 
 |-----------|-------------|
 | **MCP Server** | Python server connecting AI tools to Power BI and Fabric APIs |
 | **Report Prompt** | Generates standalone HTML reports with KPIs, tables, analysis, and findings |
-| **QBR Prompt** | Generates a board-ready Quarterly Business Review (the "Clear Perspective" design) with a PDF export button — matches your brand automatically if you point it at your website |
+| **QBR Prompt** | Generates a board-ready Quarterly Business Review (the "Clear Perspective" design) with a PDF export button. Matches your brand automatically if you point it at your website |
 | **Project Report Prompt** | Generates project status reports |
 | **Data Anonymization** | Two-pass anonymization: deterministic aliases + NLP safety net |
 | **DAX Verifier** | Re-runs every DAX query in a generated report and checks that the numbers match your data |
@@ -34,9 +34,9 @@ Then add the MCP server to your AI tool:
 claude mcp add powerbi -- bash -c "cd /path/to/powerbi-claude-skills && exec python -m server.server"
 ```
 
-The `cd` matters: the server must start from the repo directory (and with the
-Python environment you installed the requirements into — if you used a venv,
-point at `.venv/bin/python` instead of `python`).
+The `cd` matters: the server must start from the repo directory, and with the
+Python environment you installed the requirements into. If you used a venv,
+point at `.venv/bin/python` instead of `python`.
 
 **VS Code (GitHub Copilot / Cursor):**
 Add to `.vscode/mcp.json`:
@@ -119,7 +119,7 @@ verifiable and does not belong in this repo.
 
 ## QBR styling and branding
 
-The QBR prompt builds on `templates/qbr-template.html` — a self-contained, print-ready design
+The QBR prompt builds on `templates/qbr-template.html`, a self-contained, print-ready design
 with a cover, a maturity benchmark, service/security/hardware/contract sections, a risk and
 action list, and a floating **Export as PDF** button.
 
@@ -136,14 +136,16 @@ from those aliases, and real names are restored locally at the end (see below).
 
 ## Data anonymization
 
-All data is automatically anonymized before it reaches the AI. The AI only sees aliases like Client_A, Resource_1, Contact_3.
+All data is anonymized before it reaches the AI. The AI only ever sees aliases like Client_A, Resource_1, Contact_3.
+
+There is no second AI doing this, and nothing runs in the cloud. The anonymizer *is* the MCP server: a small Python process on your own machine, sitting between Power BI and the AI. On the way out it replaces sensitive names with codenames; on the way back it swaps the real names in. The codebook stays on your disk. Think local find-and-replace proxy, not a model. Numbers are never touched, only names, so the AI still reasons over your real figures.
 
 ### How it works
 
 1. **On first query**, the server loads unique values from your configured sensitive columns via DAX
 2. **Every response** passes through two layers:
    - **Pass 1 (deterministic lookup):** known entities get consistent aliases (fast, auditable)
-   - **Pass 2 (Presidio NLP):** catches unexpected PII in free-text fields. This pass is optional and OFF by default: `pip install -r requirements.txt` does not install it, so on a default install only Pass 1 runs. To turn Pass 2 on, install the packages and the spaCy model:
+   - **Pass 2 (Presidio):** an offline safety net for stray PII in free-text fields. It uses [Microsoft Presidio](https://github.com/microsoft/presidio) with a small local spaCy NER model (~12MB), not an LLM, and it makes no API call. This pass is optional and OFF by default: `pip install -r requirements.txt` does not install it, so on a default install only Pass 1 runs. To turn Pass 2 on, install the packages and the spaCy model:
 
      ```bash
      pip install presidio-analyzer presidio-anonymizer spacy
@@ -152,14 +154,16 @@ All data is automatically anonymized before it reaches the AI. The AI only sees 
 
      The server warns on startup when Pass 2 is configured but not installed, and the `anonymization_status` tool shows whether Pass 2 is ACTIVE or INACTIVE.
 
-     Pass 2 masks the entity types listed in `presidio_entities` (person, organisation, email, phone, and other PII). `DATE_TIME` is deliberately **not** in the default set: masking dates turns `MAX(create_date)` into a token and stops the AI from discovering where the data ends. Pass 2 also leaves clear non-PII untouched — GUIDs, pure numbers and ISO dates, DAX/schema identifiers (e.g. `DIVIDE`, `Hours`, `Ratio`), and priority tiers (`P1-…`) — so those stay readable. Reducing this list only ever removes masking; add an entity type to mask more. Pass 1 (the deterministic registry) is unaffected by this setting.
+     Pass 2 masks the entity types listed in `presidio_entities` (person, organisation, email, phone, and other PII). `DATE_TIME` is deliberately **not** in the default set: masking dates turns `MAX(create_date)` into a token and stops the AI from discovering where the data ends. Pass 2 also leaves clear non-PII untouched, so GUIDs, pure numbers and ISO dates, DAX/schema identifiers (e.g. `DIVIDE`, `Hours`, `Ratio`), and priority tiers (`P1-…`) stay readable. Reducing this list only ever removes masking; add an entity type to mask more. Pass 1 (the deterministic registry) is unaffected by this setting.
 3. **After report generation**, restore real names locally
+
+The guarantee is only as strong as your sensitive-column list. Pass 1 masks the columns you flag. If a real name sits in a free-text field you did not flag and Pass 2 is off, it can reach the AI in the clear. That is what Pass 2 is for, and why the wizard auto-detects sensitive columns for you. When in doubt, flag the column or turn Pass 2 on.
 
 ### Restoring real names
 
-**Option A — In the browser:** Open the generated report. A yellow restore bar sits at the top of the page. Drag `~/.powerbi-mcp/sessions/latest/mapping.json` onto that bar, or click "Load mapping.json" on the bar and pick the file.
+**Option A, in the browser:** Open the generated report. A yellow restore bar sits at the top of the page. Drag `~/.powerbi-mcp/sessions/latest/mapping.json` onto that bar, or click "Load mapping.json" on the bar and pick the file.
 
-**Option B — CLI:**
+**Option B, the CLI:**
 ```bash
 python -m server report.html -o report-real.html
 ```
@@ -248,7 +252,7 @@ No Azure app registration needed. The server uses the same public client flow as
 1. The wizard opens a browser for Microsoft sign-in
 2. You sign in with your Power BI account
 3. Tokens are cached locally in `~/.powerbi-mcp/`
-4. Subsequent runs refresh automatically — no re-login needed
+4. Subsequent runs refresh automatically, no re-login needed
 
 Tokens are stored only on your machine. The MCP server never sends credentials to any third party.
 
@@ -298,6 +302,10 @@ python -m pytest tests/ -v
 | Claude Desktop | Supported |
 | Cursor | Supported |
 | ChatGPT (via MCP plugin) | Experimental |
+
+## Built by Proxuma
+
+Built and maintained by [Proxuma](https://proxuma.io) for MSPs running Power BI. It pairs with the Proxuma Power BI product at [proxuma.io/powerbi](https://proxuma.io/powerbi).
 
 ## License
 
