@@ -114,3 +114,23 @@ def test_self_test_samples_with_topn():
 def test_self_test_fails_when_no_candidates(capsys):
     ok = run_anonymization_self_test({}, dax_executor=lambda q: {})
     assert ok is False
+
+
+# --- TMDL part-path parsing -------------------------------------------------
+# Real getDefinition responses use flat paths (definition/tables/X.tmdl).
+# The original pattern required a slash after the table name, so it matched
+# nothing on a real model and detection returned {} while anonymization
+# reported itself enabled.
+
+from server.wizard import table_from_path
+
+
+@pytest.mark.parametrize("path,expected", [
+    ("definition/tables/BI_Autotask_Companies.tmdl", "BI_Autotask_Companies"),
+    ("definition/tables/BI_Autotask_Companies/columns.tmdl", "BI_Autotask_Companies"),
+    ("definition/tables/My.Table.tmdl", "My.Table"),
+    ("definition/model.tmdl", None),
+    ("definition/relationships.tmdl", None),
+])
+def test_table_from_path(path, expected):
+    assert table_from_path(path) == expected
