@@ -12,3 +12,4 @@ build/
 config.json
 .claude-flow/
 .worktrees/
+docs/superpowers/
