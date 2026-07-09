@@ -31,8 +31,12 @@ Then add the MCP server to your AI tool:
 
 **Claude Code:**
 ```bash
-claude mcp add powerbi -- python -m server.server
+claude mcp add powerbi -- bash -c "cd /path/to/powerbi-claude-skills && exec python -m server.server"
 ```
+
+The `cd` matters: the server must start from the repo directory (and with the
+Python environment you installed the requirements into — if you used a venv,
+point at `.venv/bin/python` instead of `python`).
 
 **VS Code (GitHub Copilot / Cursor):**
 Add to `.vscode/mcp.json`:

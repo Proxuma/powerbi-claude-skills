@@ -112,3 +112,35 @@ def test_deanonymize_from_file_flat_mapping():
         result = output_path.read_text()
         assert "Jan de Vries" in result
         assert "Resource_1" not in result
+
+
+# --- Bare Presidio tokens (angle brackets stripped) --------------------------
+# Generators sometimes write ORGANIZATION_62 instead of <ORGANIZATION_62>;
+# the mapping key keeps its brackets, so a literal replace never matches and
+# the token survives into the customer-facing report.
+
+def test_deanonymize_text_restores_bare_presidio_token():
+    mapping = {"<ORGANIZATION_62>": "Nazorgfase"}
+    text = "The ORGANIZATION_62 phase overran by 6 hours."
+    assert deanonymize_text(text, mapping) == "The Nazorgfase phase overran by 6 hours."
+
+
+def test_bare_token_respects_word_boundaries():
+    mapping = {"<ORGANIZATION_62>": "Nazorgfase"}
+    text = "ORGANIZATION_621 stays, ORGANIZATION_62 restores."
+    assert deanonymize_text(text, mapping) == "ORGANIZATION_621 stays, Nazorgfase restores."
+
+
+def test_deanonymize_html_restores_bare_presidio_token_escaped():
+    mapping = {"<ORGANIZATION_63>": "R&D fase"}
+    html_text = "<td>ORGANIZATION_63 issue</td>"
+    assert deanonymize_html(html_text, mapping) == "<td>R&amp;D fase issue</td>"
+
+
+def test_bracketed_and_bare_tokens_both_restore_in_one_document():
+    mapping = {"<ORGANIZATION_62>": "Nazorgfase", "Client_87": "Wu-Jackson"}
+    text = "&lt;ORGANIZATION_62&gt; and ORGANIZATION_62 and Client_87"
+    result = deanonymize_html(text, mapping)
+    assert "ORGANIZATION_62" not in result
+    assert result.count("Nazorgfase") == 2
+    assert "Wu-Jackson" in result
