@@ -152,6 +152,15 @@ There is no second AI doing this, and nothing runs in the cloud. The anonymizer 
      python -m spacy download en_core_web_sm
      ```
 
+     `spacy download` shells out to a `pip` (or `uv`) **executable** on your PATH, not to the
+     `pip` module. In an unactivated venv — the `.venv/bin/python` pattern used elsewhere in this
+     README — it fails with `✘ No package installer found`. Either activate the venv first, or
+     install the model wheel directly, matching the model version to your spaCy 3.8.x:
+
+     ```bash
+     .venv/bin/pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+     ```
+
      The server warns on startup when Pass 2 is configured but not installed, and the `anonymization_status` tool shows whether Pass 2 is ACTIVE or INACTIVE.
 
      Pass 2 masks the entity types listed in `presidio_entities` (person, organisation, email, phone, and other PII). `DATE_TIME` is deliberately **not** in the default set: masking dates turns `MAX(create_date)` into a token and stops the AI from discovering where the data ends. Pass 2 also leaves clear non-PII untouched, so GUIDs, pure numbers and ISO dates, DAX/schema identifiers (e.g. `DIVIDE`, `Hours`, `Ratio`), and priority tiers (`P1-…`) stay readable. Reducing this list only ever removes masking; add an entity type to mask more. Pass 1 (the deterministic registry) is unaffected by this setting.
@@ -233,7 +242,7 @@ Pass 2 adds nothing for descriptive or sector content, because a job title or sp
 ### What you must do
 
 - **Configure every column that carries an identifier**, not just the obvious name columns. The configured list is the protection boundary. Anything outside it is published as written. That includes descriptive columns (role, department, sector) and free-text columns, not only company and contact names.
-- **Install Presidio if your reports touch free text.** The default install does not include it. Add it with `pip install presidio-analyzer presidio-anonymizer spacy` and `python -m spacy download en_core_web_sm`, then set `presidio_enabled: true`.
+- **Install Presidio if your reports touch free text.** The default install does not include it. Add it with `pip install presidio-analyzer presidio-anonymizer spacy` and `python -m spacy download en_core_web_sm`, then set `presidio_enabled: true`. Run the download with the venv activated, or install the model wheel directly (see [Data anonymization](#data-anonymization) above).
 - **Review a report before you share it externally.** The tool reduces exposure; it does not guarantee that nothing identifying remains. Read the anonymized output and confirm it is safe for its audience.
 
 ## MCP tools
