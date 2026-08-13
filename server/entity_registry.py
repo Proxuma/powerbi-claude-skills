@@ -18,6 +18,23 @@ _RATE_LIMIT_MARKERS = ("429", "exceeded the amount of requests", "too many reque
 _RETRY_HINT = re.compile(r"retry in (\d+) seconds?", re.I)
 
 
+def _is_registrable(value: str) -> bool:
+    """Reject values that cannot be a real entity name but wreck output.
+
+    A contact row holding "-" or "." registers that character as an entity, and
+    anonymize_text then rewrites every hyphen in the response: the date
+    "2025-09" comes back as "2025Contact_46053" and every ISO date, phone
+    number and age bucket in the report turns to noise.
+
+    A real client, resource or contact name always contains at least one letter
+    and is longer than a single character.
+    """
+    stripped = value.strip()
+    if len(stripped) < 2:
+        return False
+    return any(ch.isalpha() for ch in stripped)
+
+
 def _is_rate_limited(err: Exception) -> bool:
     msg = str(err).lower()
     return any(m in msg for m in _RATE_LIMIT_MARKERS)
@@ -136,6 +153,8 @@ class EntityRegistry:
                     values = self._fetch_with_retry(col_ref)
                     for val in values:
                         norm = _normalize(val)
+                        if not _is_registrable(val):
+                            continue
                         if norm in self._never_mask:
                             self._skipped.add(val)
                             continue

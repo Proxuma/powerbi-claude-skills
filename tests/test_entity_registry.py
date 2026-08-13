@@ -401,3 +401,37 @@ def test_request_delay_paces_between_columns_but_not_before_first():
     )
     registry.initialize()
     assert slept == [0.5, 0.5]
+
+
+def test_punctuation_only_values_are_not_registered():
+    """A contact row holding "-" registered the hyphen as an entity, turning
+    the date 2025-09 into 2025Contact_46053."""
+    registry = EntityRegistry(
+        sensitive_columns={"contact": ["'Contacts'[Name]"]},
+        dax_executor=lambda q: _resp("-", ".", "/", "Jan de Vries"),
+    )
+    registry.initialize()
+    assert registry.anonymize_text("2025-09-14") == "2025-09-14"
+    assert registry.anonymize_text("Jan de Vries") == "Contact_1"
+
+
+def test_single_character_values_are_not_registered():
+    registry = EntityRegistry(
+        sensitive_columns={"client": ["'Companies'[Name]"]},
+        dax_executor=lambda q: _resp("X", "A", "Acme Corp"),
+    )
+    registry.initialize()
+    assert registry.anonymize_text("X marks A spot") == "X marks A spot"
+    assert registry.anonymize("Acme Corp") == "Client_A"
+
+
+def test_short_names_with_letters_are_still_registered():
+    """3M and A1 are plausible company names - only letterless or
+    single-character values are rejected."""
+    registry = EntityRegistry(
+        sensitive_columns={"client": ["'Companies'[Name]"]},
+        dax_executor=lambda q: _resp("3M", "A1"),
+    )
+    registry.initialize()
+    assert registry.anonymize("3M") == "Client_A"
+    assert registry.anonymize("A1") == "Client_B"
