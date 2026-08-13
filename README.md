@@ -192,6 +192,69 @@ The wizard (option 4) auto-detects sensitive columns. Or edit `~/.powerbi-mcp/co
 
 `presidio_entities` is optional; omit it to use the default set. It excludes `DATE_TIME` on purpose (see above). Add or remove entity types to control what Pass 2 masks.
 
+### Generic values held out of Pass 1 (`never_mask`)
+
+Pass 1 replaces a registered value wherever it appears as a whole word. That is what
+makes it catch a client name embedded in free text — and what makes it dangerous when a
+*generic* value gets registered. Service and system accounts routinely sit in contact and
+resource columns under names like `Admin`, `User`, `API` or `Desk`. Registering `Desk`
+rewrites the role `Help Desk` into `Help Contact_48182`, and the output stops being
+readable.
+
+The registry therefore holds a built-in list of generic terms out of Pass 1. **It matches
+whole registered values only, never substrings**, so a client named `Support B.V.` is
+still masked — its registered value is `Support B.V.`, which is not a generic term. The
+cost is precise and bounded: an entity whose *entire* name is one of these words is not
+masked by Pass 1.
+
+Every held-out value is reported on startup and by `anonymization_status`, so the
+exemption is auditable rather than silent. Extend or disable it in `config.json`:
+
+```json
+{
+  "anonymization": {
+    "never_mask": ["Werkplek", "Balie"],
+    "use_default_never_mask": true
+  }
+}
+```
+
+`never_mask` adds to the built-in list. Set `use_default_never_mask` to `false` to drop
+the built-ins and rely only on your own list — do that if one of your real clients is
+named exactly like a generic term.
+
+### Rate limiting and incomplete registries
+
+Loading the registry runs one `EVALUATE DISTINCT(...)` per configured column. On a real
+tenant that is easily a hundred-plus queries back to back, and Power BI answers with
+HTTP 429 partway through. **A column that fails to load is a column whose values are not
+masked**, so an unnoticed 429 is a silent leak — and because different columns fail on
+each run, aliases are not reproducible between sessions either.
+
+The loader therefore paces its requests, retries rate-limited columns (honouring Power
+BI's own `Retry in N seconds` hint), and **refuses to start if any column is still
+missing afterwards**:
+
+```json
+{
+  "anonymization": {
+    "fail_on_degraded": true,
+    "max_retries": 4,
+    "retry_base_delay": 2.0,
+    "request_delay": 0.2
+  }
+}
+```
+
+Only rate-limit errors are retried. A column that no longer exists fails the same way on
+every attempt, so it surfaces immediately instead of after minutes of backoff — fix the
+reference in `sensitive_columns`.
+
+> **Behaviour change.** `fail_on_degraded` defaults to `true`, so a partially loaded
+> registry is now a startup error rather than a warning. This is deliberate: the previous
+> default kept serving with some columns unmasked. Set it to `false` for the old
+> behaviour, accepting that unmasked values may reach the AI.
+
 ### Audit trail
 
 Every session stores its mapping at `~/.powerbi-mcp/sessions/<id>/mapping.json`. This file never leaves your machine. Use it to verify what was anonymized and provide compliance documentation.
