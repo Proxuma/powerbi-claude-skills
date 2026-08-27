@@ -109,12 +109,26 @@ def _init_anonymizer():
     registry = EntityRegistry(
         sensitive_columns=sensitive_columns,
         dax_executor=dax_executor,
+        never_mask=anon_config.get("never_mask"),
+        use_default_never_mask=anon_config.get("use_default_never_mask", True),
+        max_retries=anon_config.get("max_retries", 4),
+        retry_base_delay=anon_config.get("retry_base_delay", 2.0),
+        request_delay=anon_config.get("request_delay", 0.2),
+        fail_on_degraded=anon_config.get("fail_on_degraded", True),
     )
     registry.initialize()
 
     if registry.is_degraded:
         for warning in registry.get_warnings():
             print(f"[ANON WARNING] {warning}", file=sys.stderr, flush=True)
+
+    skipped = registry.get_skipped()
+    if skipped:
+        print(
+            f"[ANON] never_mask held {len(skipped)} generic value(s) out of the "
+            f"registry; they are NOT masked by Pass 1: {', '.join(skipped)}",
+            file=sys.stderr, flush=True,
+        )
 
     _anonymizer_instance = Anonymizer(
         registry=registry,
@@ -544,6 +558,14 @@ async def call_tool(name: str, arguments: dict):
             output += f"  Entities mapped: {stats.get('registry_entities', 0)}\n"
             output += f"  {anon.presidio_status_line()}\n"
             output += f"  Presidio detections: {stats.get('presidio_detections', 0)}\n"
+            skipped = anon._registry.get_skipped()
+            if skipped:
+                output += (
+                    f"  never_mask exemptions: {len(skipped)} generic value(s) "
+                    f"held out of the registry and NOT masked by Pass 1\n"
+                )
+                for v in skipped:
+                    output += f"    - {v}\n"
             if anon._registry.is_degraded:
                 output += "  WARNING: Registry in degraded mode (some columns failed to load)\n"
                 for w in anon._registry.get_warnings():
