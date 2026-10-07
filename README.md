@@ -12,6 +12,7 @@ Built for MSPs on the Proxuma Power BI product who want to query their own tenan
 | **Report Prompt** | Generates standalone HTML reports with KPIs, tables, analysis, and findings |
 | **QBR Prompt** | Generates a board-ready Quarterly Business Review (the "Clear Perspective" design) with a PDF export button. Matches your brand automatically if you point it at your website |
 | **Project Report Prompt** | Generates project status reports |
+| **Dashboard Prompt** | Generates an interactive dashboard (KPIs, gauges, Chart.js trends, company table) with company and time-range cross-filtering |
 | **Data Anonymization** | Two-pass anonymization: deterministic aliases + NLP safety net |
 | **DAX Verifier** | Re-runs every DAX query in a generated report and checks that the numbers match your data |
 | **Setup Wizard** | Auto-discovers workspaces, datasets, and sensitive columns |
@@ -75,6 +76,7 @@ Import these as slash commands or paste them as system prompts.
 | `prompts/powerbireport.md` | `#powerbireport what is my monthly revenue trend?` |
 | `prompts/powerbireportQBR.md` | `#powerbireportQBR Contoso Q1 2026` |
 | `prompts/projectreport.md` | `#projectreport Project Alpha` |
+| `prompts/powerbidashboard.md` | `#powerbidashboard SLA performance` |
 | `prompts/powerbi.md` | General Power BI data questions |
 
 ## Build your own skill
@@ -314,9 +316,12 @@ powerbi-claude-skills/
 │   ├── powerbireport.md       # Report generator
 │   ├── powerbireportQBR.md    # QBR report generator
 │   ├── projectreport.md       # Project report generator
+│   ├── powerbidashboard.md    # Interactive dashboard generator
 │   └── powerbi.md             # General Power BI queries
 ├── templates/
 │   ├── report-shell.html      # Report HTML template (with restore UI)
+│   ├── dashboard.html         # Config-driven dashboard template
+│   ├── configs/               # Example dashboard configs
 │   └── qbr-template.html      # QBR design template ("Clear Perspective", re-skinnable, PDF-ready)
 ├── tools/
 │   └── verify_report.py       # Re-run a report's DAX and check its numbers

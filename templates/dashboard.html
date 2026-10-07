@@ -720,7 +720,7 @@ function updateTable(facts) {
     const byCompany = aggregateByCompany(facts);
     const sortField = tbl.sort || 'rev';
     const sortDir = tbl.order === 'asc' ? 1 : -1;
-    byCompany.sort((a, b) => sortDir * ((b[sortField] || 0) - (a[sortField] || 0)));
+    byCompany.sort((a, b) => sortDir * ((a[sortField] || 0) - (b[sortField] || 0)));
     const rows = byCompany.slice(0, tbl.limit || 15);
 
     tbody.innerHTML = '';
