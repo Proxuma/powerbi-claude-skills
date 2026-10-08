@@ -162,7 +162,7 @@ const DASH_CONFIG = {{DASHBOARD_CONFIG}};
 //  DATA PAYLOAD (auto-generated from Power BI DAX queries)
 //  refresh.py replaces ONLY this block: const DATA = {...};
 //  Structure: { refreshed, dim: {companies,resources,queues},
-//    facts: [{c,y,m,...metrics}], facts_resource, facts_queue, static_kpi }
+//    facts: [{c,r?,q?,y,m,...metrics}], static_kpi }
 // ================================================================
 const DATA = {{DATA_JSON}};
 
@@ -219,47 +219,32 @@ function resolveMetric(metricDef, totals, staticKpi) {
 // ================================================================
 //  AGGREGATION ENGINE
 // ================================================================
+// Dimension keys on a fact row: c = company, r = resource, q = queue, y/m = period.
+// Everything else on the row is a metric and gets summed.
+const DIM_KEYS = new Set(['c', 'r', 'q', 'y', 'm']);
+
 function sumTotals(facts) {
     const t = { _count: facts.length };
     facts.forEach(f => {
         Object.keys(f).forEach(k => {
-            if (k === 'c' || k === 'y' || k === 'm') return;
+            if (DIM_KEYS.has(k)) return;
             t[k] = (t[k] || 0) + (f[k] || 0);
         });
     });
     return t;
 }
 
+// Facts carry c always, and r and/or q when the dashboard filters on
+// resource or queue (grain: company x resource/queue x month). A row
+// without the key cannot match an active filter on that dimension.
 function filterFacts(facts, filters) {
     let out = facts;
-    if (filters.companies.length) {
-        const set = new Set(filters.companies);
-        out = out.filter(f => set.has(f.c));
-    }
-    if (filters.months.length) {
-        out = out.filter(f => filters.months.some(m => m.y === f.y && m.m === f.m));
-    }
-    return out;
-}
-
-function filterResourceFacts(facts, filters) {
-    let out = facts;
-    if (filters.resources.length) {
-        const set = new Set(filters.resources);
-        out = out.filter(f => set.has(f.r));
-    }
-    if (filters.months.length) {
-        out = out.filter(f => filters.months.some(m => m.y === f.y && m.m === f.m));
-    }
-    return out;
-}
-
-function filterQueueFacts(facts, filters) {
-    let out = facts;
-    if (filters.queues.length) {
-        const set = new Set(filters.queues);
-        out = out.filter(f => set.has(f.q));
-    }
+    [['companies', 'c'], ['resources', 'r'], ['queues', 'q']].forEach(([dim, key]) => {
+        if (filters[dim].length) {
+            const set = new Set(filters[dim]);
+            out = out.filter(f => set.has(f[key]));
+        }
+    });
     if (filters.months.length) {
         out = out.filter(f => filters.months.some(m => m.y === f.y && m.m === f.m));
     }
@@ -274,7 +259,7 @@ function aggregateMonthly(facts) {
             map[key] = { y: f.y, m: f.m };
         }
         Object.keys(f).forEach(k => {
-            if (k === 'c' || k === 'y' || k === 'm') return;
+            if (DIM_KEYS.has(k)) return;
             map[key][k] = (map[key][k] || 0) + (f[k] || 0);
         });
     });
@@ -286,7 +271,7 @@ function aggregateByCompany(facts) {
     facts.forEach(f => {
         if (!map[f.c]) map[f.c] = { c: f.c };
         Object.keys(f).forEach(k => {
-            if (k === 'c' || k === 'y' || k === 'm') return;
+            if (DIM_KEYS.has(k)) return;
             map[f.c][k] = (map[f.c][k] || 0) + (f[k] || 0);
         });
     });
@@ -357,7 +342,7 @@ function buildLayout() {
     }
 
     // Filter bar
-    buildFilterBar(C.filters || ['company', 'queue', 'resource', 'time']);
+    buildFilterBar(C.filters || ['company', 'time']);
 
     // KPI rows
     const kpiContainer = document.getElementById('kpi-container');

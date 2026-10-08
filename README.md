@@ -12,7 +12,7 @@ Built for MSPs on the Proxuma Power BI product who want to query their own tenan
 | **Report Prompt** | Generates standalone HTML reports with KPIs, tables, analysis, and findings |
 | **QBR Prompt** | Generates a board-ready Quarterly Business Review (the "Clear Perspective" design) with a PDF export button. Matches your brand automatically if you point it at your website |
 | **Project Report Prompt** | Generates project status reports |
-| **Dashboard Prompt** | Generates an interactive dashboard (KPIs, gauges, Chart.js trends, company table) with company and time-range cross-filtering |
+| **Dashboard Prompt** | Generates an interactive dashboard (KPIs, gauges, Chart.js trends, company table) with company, queue, resource and time-range cross-filtering |
 | **Data Anonymization** | Two-pass anonymization: deterministic aliases + NLP safety net |
 | **DAX Verifier** | Re-runs every DAX query in a generated report and checks that the numbers match your data |
 | **Setup Wizard** | Auto-discovers workspaces, datasets, and sensitive columns |
