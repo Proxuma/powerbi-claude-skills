@@ -17,7 +17,7 @@ Build an interactive, cross-filtering HTML dashboard from Power BI data.
 > afterwards by the deanonymizer; the mapping never leaves the user's machine. When you filter
 > a query to one entity, filter on its numeric id, not on an aliased name.
 
-The company list in the dashboard (`DATA.dim.companies`) therefore holds aliases. That is expected.
+The dimension lists in the dashboard (`DATA.dim.companies`, `resources`, `queues`) therefore hold aliases. That is expected.
 
 ---
 
@@ -25,7 +25,7 @@ The company list in the dashboard (`DATA.dim.companies`) therefore holds aliases
 
 One self-contained HTML file built on `templates/dashboard.html`:
 
-- Filter bar: company and time range, cross-filtering every KPI, gauge, chart and the table client-side
+- Filter bar: company, queue, resource and time range, cross-filtering every KPI, gauge, chart and the table client-side
 - KPI cards (up to 2 rows of 4), gauge rings with targets, up to 4 Chart.js charts, a ranked company table
 - Layout driven by a `DASH_CONFIG` JSON object
 - Data in a star-schema `DATA` JSON object (dimensions + monthly facts)
@@ -64,7 +64,7 @@ Identify:
 
 - The measures you will use
 - The fact table and the date table (year and month columns)
-- The company name column (the dashboard's filter dimension)
+- The company name column, plus the queue or resource name column if the dashboard filters on those
 
 **Use the measure and table names you actually find. Never guess.**
 
@@ -87,7 +87,7 @@ Ready-made `DASH_CONFIG` examples live in `templates/configs/` (SLA, revenue, ut
 
 ## Phase 3: Pull data via DAX
 
-The dashboard filters client-side, so it needs **granular company x month** facts, not totals. Every metric that should respond to the filters has to be a column in query A. A metric that only exists as a single total (pipeline, backup rate) goes in query B and stays fixed when filters change. Limit history to the current and previous year.
+The dashboard filters client-side, so it needs **granular company x month** facts, not totals. If the dashboard also filters on queue or resource, add that column to the grain (company x queue x month, or company x resource x month). Every metric that should respond to the filters has to be a column in query A. A metric that only exists as a single total (pipeline, backup rate) goes in query B and stays fixed when filters change. Limit history to the current and previous year.
 
 ### A. Company x month (main facts, required)
 
@@ -103,6 +103,8 @@ EVALUATE ADDCOLUMNS(
 )
 ORDER BY <CompanyTable>[<company_name>], <DateTable>[year], <DateTable>[month]
 ```
+
+With a queue filter, add the queue column to `SUMMARIZE` (for example `<TicketTable>[<queue_name>]`). Same for a resource filter with the resource column. Pick queue **or** resource, not both, and only metrics that live on that fact table: ticket metrics for queue, time-entry metrics for resource.
 
 ### B. Static KPIs (not filterable)
 
@@ -124,14 +126,16 @@ If a query result is very large, narrow it (fewer measures per query, or split b
 {
   "refreshed": "2026-01-31T08:00:00Z",
   "dim": {
-    "companies": ["Client_A", "Client_B"]
+    "companies": ["Client_A", "Client_B"],
+    "queues": ["Service Desk", "Projects"]
   },
-  "facts": [{"c": 0, "y": 2025, "m": 1, "rev": 12345, "hrs": 50}],
+  "facts": [{"c": 0, "q": 1, "y": 2025, "m": 1, "t_cr": 40, "t_res": 38}],
   "static_kpi": {"pipeline_count": 45}
 }
 ```
 
-- `c` is the integer index into `dim.companies`
+- `c` is the integer index into `dim.companies`; `q` into `dim.queues` and `r` into `dim.resources` when you use those filters
+- `c`, `q`, `r`, `y` and `m` are dimension keys. Every other key on a row is a metric and gets summed
 - `y` and `m` are integers
 - Include every row the DAX returned. Blank measure values become `0`
 - Omit `static_kpi` when you have no static KPIs
@@ -143,7 +147,7 @@ If a query result is very large, narrow it (fewer measures per query, or split b
   "title": "Dashboard Title",
   "subtitle": "What this dashboard shows",
   "sources": "Autotask PSA via Power BI",
-  "filters": ["company", "time"],
+  "filters": ["company", "queue", "time"],
   "kpi_rows": [[], []],
   "gauges": [],
   "charts": [],
@@ -151,7 +155,7 @@ If a query result is very large, narrow it (fewer measures per query, or split b
 }
 ```
 
-Use exactly `["company", "time"]`. The template can also draw resource and queue buttons, but its render loop only applies the company and time filters, so those buttons would do nothing.
+Choose from `company`, `queue`, `resource` and `time`. Only list `queue` or `resource` when every fact row carries the matching `q` or `r` key. A row without it drops out as soon as that filter is used.
 
 ### Metric syntax
 
