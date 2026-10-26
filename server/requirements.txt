@@ -1,5 +1,5 @@
 # MCP Server
-mcp
+mcp>=1.25.0,<2
 
 # Azure Identity for Power BI authentication
 azure-identity
