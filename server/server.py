@@ -65,6 +65,32 @@ def load_config():
 
 USER_CONFIG = load_config()
 
+# Claude Desktop cancels any tool call at 240 s and that limit is not
+# configurable. A Power BI request still running past it returns into an
+# already-cancelled request, which crashes mcp 1.x ("Request already responded
+# to"). Bounding every HTTP call well below 240 s keeps us out of that path.
+QUERY_TIMEOUT_SECONDS = USER_CONFIG.get("query_timeout_seconds", 200)
+HTTP_TIMEOUT = (10, QUERY_TIMEOUT_SECONDS)  # (connect, read)
+MAX_429_RETRIES = 3
+
+
+def post_dax(dataset_id: str, query: str) -> requests.Response:
+    """POST a DAX query, retrying on 429 with the server's Retry-After."""
+    for attempt in range(MAX_429_RETRIES + 1):
+        response = requests.post(
+            f"https://api.powerbi.com/v1.0/myorg/datasets/{dataset_id}/executeQueries",
+            headers=get_powerbi_headers(),
+            json={"queries": [{"query": query}], "serializerSettings": {"includeNulls": True}},
+            timeout=HTTP_TIMEOUT,
+        )
+        if response.status_code != 429 or attempt == MAX_429_RETRIES:
+            return response
+        try:
+            wait = float(response.headers.get("Retry-After", ""))
+        except ValueError:
+            wait = 2 ** attempt
+        time.sleep(min(wait, 30))
+
 server = Server("powerbi-connector")
 
 # Anonymization state (initialized lazily on first tool call)
@@ -97,11 +123,7 @@ def _init_anonymizer():
         dataset_id = args.get("dataset_id", "")
         if not dataset_id:
             raise Exception("No dataset_id configured for anonymization registry")
-        response = requests.post(
-            f"https://api.powerbi.com/v1.0/myorg/datasets/{dataset_id}/executeQueries",
-            headers=get_powerbi_headers(),
-            json={"queries": [{"query": query}], "serializerSettings": {"includeNulls": True}}
-        )
+        response = post_dax(dataset_id, query)
         response.raise_for_status()
         return response.json()
 
@@ -181,7 +203,8 @@ def fetch_and_decode_schema(workspace_id: str, dataset_id: str) -> str:
     """Fetch schema and decode all base64 TMDL content to readable text."""
     response = requests.post(
         f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/semanticModels/{dataset_id}/getDefinition",
-        headers=get_fabric_headers()
+        headers=get_fabric_headers(),
+        timeout=HTTP_TIMEOUT
     )
 
     schema_data = None
@@ -190,13 +213,14 @@ def fetch_and_decode_schema(workspace_id: str, dataset_id: str) -> str:
         if location:
             for _ in range(30):
                 time.sleep(2)
-                result = requests.get(location, headers=get_fabric_headers())
+                result = requests.get(location, headers=get_fabric_headers(), timeout=HTTP_TIMEOUT)
                 if result.status_code == 200:
                     data = result.json()
                     if data.get("status") == "Succeeded":
                         result_response = requests.get(
                             f"{location}/result",
-                            headers=get_fabric_headers()
+                            headers=get_fabric_headers(),
+                            timeout=HTTP_TIMEOUT
                         )
                         if result_response.ok:
                             schema_data = result_response.json()
@@ -326,7 +350,8 @@ async def call_tool(name: str, arguments: dict):
         if name == "list_workspaces":
             response = requests.get(
                 "https://api.powerbi.com/v1.0/myorg/groups",
-                headers=get_powerbi_headers()
+                headers=get_powerbi_headers(),
+                timeout=HTTP_TIMEOUT
             )
             response.raise_for_status()
             data = response.json()
@@ -355,7 +380,8 @@ async def call_tool(name: str, arguments: dict):
                 return [TextContent(type="text", text="Error: workspace_id is required. Provide it as an argument or set default_workspace_id in config.json.")]
             response = requests.get(
                 f"https://api.powerbi.com/v1.0/myorg/groups/{workspace_id}/datasets",
-                headers=get_powerbi_headers()
+                headers=get_powerbi_headers(),
+                timeout=HTTP_TIMEOUT
             )
             response.raise_for_status()
             data = response.json()
@@ -400,14 +426,7 @@ async def call_tool(name: str, arguments: dict):
                     file=sys.stderr,
                     flush=True,
                 )
-            response = requests.post(
-                f"https://api.powerbi.com/v1.0/myorg/datasets/{dataset_id}/executeQueries",
-                headers=get_powerbi_headers(),
-                json={
-                    "queries": [{"query": dax_query}],
-                    "serializerSettings": {"includeNulls": True}
-                }
-            )
+            response = post_dax(dataset_id, dax_query)
             response.raise_for_status()
             anonymized_data = _anonymize_json(response.json())
             _save_mapping()
@@ -435,7 +454,8 @@ async def call_tool(name: str, arguments: dict):
                 return [TextContent(type="text", text="Error: workspace_id is required. Provide it as an argument or set default_workspace_id in config.json.")]
             response = requests.get(
                 f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/items",
-                headers=get_fabric_headers()
+                headers=get_fabric_headers(),
+                timeout=HTTP_TIMEOUT
             )
             response.raise_for_status()
             items = response.json().get("value", [])
@@ -553,6 +573,11 @@ async def call_tool(name: str, arguments: dict):
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
+    except requests.exceptions.Timeout:
+        return [TextContent(type="text", text=(
+            f"Error: the Power BI request exceeded {QUERY_TIMEOUT_SECONDS} s and was "
+            "stopped. Narrow the query (fewer columns, a tighter date range, TOPN) and try again."
+        ))]
     except requests.exceptions.HTTPError as e:
         error_msg = f"HTTP Error: {e.response.status_code}\n{e.response.text}"
         return [TextContent(type="text", text=_anonymize_text(error_msg))]

@@ -1,4 +1,4 @@
-mcp>=1.0.0
+mcp>=1.25.0,<2  # 1.25.0 is the version we test on; 2.x is a breaking major
 requests>=2.28.0
 azure-identity>=1.14.0
 
